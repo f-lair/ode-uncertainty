@@ -151,7 +151,7 @@ class RKSolver:
         compute_node_p = partial(compute_node, fn, ts, x, h, A)
 
         ks = lax.fori_loop(0, s, compute_node_p, ks)  # [..., N, D, S]
-        x_next = x + h * ks @ b[0]  # [..., N, D]
+        x_next = x + h * ks @ b[1]  # [..., N, D]
         eps = x + h * ks @ jnp.abs((b[1] - b[0]))  # [..., N, D]
 
         return x_next, eps
