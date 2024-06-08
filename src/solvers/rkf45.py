@@ -5,7 +5,7 @@ from src.solvers.rksolver import RKSolver
 
 
 class RKF45(RKSolver):
-    """Runge-Kutta-Fehlberg solver (stage S=6)."""
+    """Runge-Kutta-Fehlberg solver (stage S=6, order p=4(5))."""
 
     @staticmethod
     def _A() -> Array:
@@ -32,3 +32,7 @@ class RKF45(RKSolver):
     @staticmethod
     def _c() -> Array:
         return jnp.array([0.0, 1 / 4, 3 / 8, 12 / 13, 1, 1 / 2])
+
+    @staticmethod
+    def _q() -> int:
+        return 4
