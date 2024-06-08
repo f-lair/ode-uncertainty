@@ -1,5 +1,5 @@
 from functools import partial
-from typing import Callable, List, Tuple
+from typing import Callable, Tuple
 
 import jax
 
@@ -13,8 +13,9 @@ from src.ode.ode import ODE
 class RKSolver:
     """Abstract base class for explicit embedded Runge-Kutta solvers."""
 
-    # Empirically derived safety factors to prevent divergent behavior of adaptive step size
-    # control (cf. scipy.integrate._ivp.rk)
+    # Conservative safety factors to prevent divergent behavior of adaptive step size control
+    # cf. E. Hairer, S. P. Norsett G. Wanner, "Solving Ordinary Differential Equations I: Nonstiff
+    # Problems", Sec. II.4.
     SAFETY_FACTOR = 0.9
     MIN_FACTOR = 0.2
     MAX_FACTOR = 1.5
@@ -357,8 +358,6 @@ class RKSolver:
                 )  # [...]
                 # After rejection, the factor should be upper bounded by 1
                 factor = jnp.where(step_rejected, jnp.minimum(1.0, factor), factor)  # [...]
-
-                print("EFH", err, factor, self.h)
 
                 # Rescale step size
                 self.h = jnp.minimum(
