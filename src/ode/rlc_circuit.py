@@ -8,15 +8,20 @@ class RLCCircuit(ODE):
     """RLC circuit ODE (second-order)."""
 
     def __init__(
-        self, resistance: float = 1.0, inductance: float = 1.0, capacitance: float = 1.0
+        self,
+        resistance: Array = jnp.array(1.0),
+        inductance: Array = jnp.array(1.0),
+        capacitance: Array = jnp.array(1.0),
     ) -> None:
         """
         Initialization for RLC circuit model.
+        ...: Batch dimension(s).
 
         Args:
-            resistance (float, optional): Resistance R. Defaults to 1.0.
-            inductance (float, optional): Inductance L. Defaults to 1.0.
-            capacitance (float, optional): Capacitance C. Defaults to 1.0.
+            resistance (Array, optional): Resistance R (Ohm) [...]. Defaults to jnp.array(1.0).
+            inductance (Array, optional): Inductance L (Henry) [...].. Defaults to jnp.array(1.0).
+            capacitance (Array, optional): Capacitance C (Farad) [...].. Defaults to
+                jnp.array(1.0).
         """
 
         self.R = resistance
@@ -31,8 +36,8 @@ class RLCCircuit(ODE):
     def fn(self, t: Array, x: Array) -> Array:
         """
         RHS of ODE.
-        D: Latent dimension.
-        N: ODE order.
+        D=1: Latent dimension.
+        N=2: ODE order.
         ...: Batch dimension(s).
 
         Args:
@@ -54,8 +59,8 @@ class RLCCircuit(ODE):
     def Fn(self, t: Array, x0: Array) -> Array:
         """
         Analytic ODE solution.
-        D: Latent dimension.
-        N: ODE order.
+        D=1: Latent dimension.
+        N=2: ODE order.
         ...: Batch dimension(s).
 
         Args:

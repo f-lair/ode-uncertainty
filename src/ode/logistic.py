@@ -7,13 +7,18 @@ from src.ode.ode import ODE
 class Logistic(ODE):
     """Logistic ODE (first-order)."""
 
-    def __init__(self, growth_rate: float = 1.0, carrying_capacity: float = 1.0) -> None:
+    def __init__(
+        self, growth_rate: Array = jnp.array(1.0), carrying_capacity: Array = jnp.array(1.0)
+    ) -> None:
         """
         Initialization for population-growth model.
+        ...: Batch dimension(s).
 
         Args:
-            growth_rate (float, optional): Population growth rate. Defaults to 1.0.
-            carrying_capacity (float, optional): Maximum population size. Defaults to 1.0.
+            growth_rate (Array, optional): Population growth rate [...]. Defaults to
+                jnp.array(1.0).
+            carrying_capacity (Array, optional): Maximum population size [...]. Defaults to
+                jnp.array(1.0).
         """
 
         self.r = growth_rate
@@ -22,8 +27,8 @@ class Logistic(ODE):
     def fn(self, t: Array, x: Array) -> Array:
         """
         RHS of ODE.
-        D: Latent dimension.
-        N: ODE order.
+        D=1: Latent dimension.
+        N=1: ODE order.
         ...: Batch dimension(s).
 
         Args:
@@ -39,8 +44,8 @@ class Logistic(ODE):
     def Fn(self, t: Array, x0: Array) -> Array:
         """
         Analytic ODE solution.
-        D: Latent dimension.
-        N: ODE order.
+        D=1: Latent dimension.
+        N=1: ODE order.
         ...: Batch dimension(s).
 
         Args:
