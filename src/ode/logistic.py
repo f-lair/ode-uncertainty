@@ -46,18 +46,19 @@ class Logistic(ODE):
         Analytic ODE solution.
         D=1: Latent dimension.
         N=1: ODE order.
+        T: Time dimension.
         ...: Batch dimension(s).
 
         Args:
-            t (Array): Time [...].
-            x0 (Array): Initial state [N, D].
+            t (Array): Time [..., T].
+            x0 (Array): Initial state [..., N, D].
 
         Returns:
-            Array: Function value [..., D].
+            Array: Function value [..., T, D].
         """
 
         b_shape = t.shape + x0.shape[-1:]
-        b_x0 = jnp.broadcast_to(x0[0], b_shape)  # [..., D]
-        b_t = jnp.broadcast_to(t[..., None], b_shape)  # [..., D]
+        b_x0 = jnp.broadcast_to(x0[..., 0, :], b_shape)  # [..., T, D]
+        b_t = jnp.broadcast_to(t[..., None], b_shape)  # [..., T, D]
 
-        return self.K / (1.0 + ((self.K - b_x0) / b_x0) * jnp.exp(-self.r * b_t))  # [..., D]
+        return self.K / (1.0 + ((self.K - b_x0) / b_x0) * jnp.exp(-self.r * b_t))  # [..., T, D]
