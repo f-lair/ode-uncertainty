@@ -46,10 +46,23 @@ def main() -> None:
         help="Number of perturbed sample paths computed using local truncation error.",
     )
     parser.add_argument(
+        "--eps-perturbation-mode",
+        type=str,
+        default="Diagonal",
+        help="Mode used for eps-based perturbations: Diagonal (default), Outer.",
+        choices=["Diagonal", "Outer"],
+    )
+    parser.add_argument(
         "--const-perturbations",
         type=int,
         default=0,
         help="Number of perturbed sample paths computed using constant.",
+    )
+    parser.add_argument(
+        "--const-perturbation-val",
+        default=0.1,
+        type=float,
+        help="Constant used for perturbations.",
     )
     parser.add_argument(
         "--seed",
@@ -99,7 +112,9 @@ def main() -> None:
     dt = jnp.array(args.dt) if args.dt is not None else None
     prng_key = random.key(args.seed)
     n_eps_p = args.eps_perturbations
+    eps_p_mode = args.eps_perturbation_mode
     n_const_p = args.const_perturbations
+    const_p_val = args.const_perturbation_val
     adaptive = args.adaptive
     rtol = args.rtol
     atol = args.atol
@@ -109,9 +124,32 @@ def main() -> None:
 
     solver = solver_cls(ode, t0, x0, dt, adaptive, rtol=rtol, atol=atol)
     ts, xs, xs_eps_p, xs_const_p, epss, epss_eps_p, epss_const_p = unroll(
-        solver, tN, prng_key, n_eps_p, n_const_p, save_interval, disable_pbar
+        solver,
+        tN,
+        prng_key,
+        n_eps_p,
+        eps_p_mode,
+        n_const_p,
+        const_p_val,
+        save_interval,
+        disable_pbar,
     )
     store(ts, xs, xs_eps_p, xs_const_p, epss, epss_eps_p, epss_const_p, out_filepath)
+
+
+def draw_eps_perturbations(eps: Array, prng_key: Array, eps_p_mode: str) -> Array:
+    match eps_p_mode:
+        case "Diagonal":
+            return eps * random.normal(prng_key, shape=eps.shape)
+        case "Outer":
+            eps_f = jnp.reshape(eps, eps.shape[:-2] + (-1,))
+            mean = jnp.zeros(eps.shape[:-2] + (eps.shape[-2] * eps.shape[-1],))
+            cov = jnp.einsum("...i, ...j -> ...ij", eps_f, eps_f)
+
+            out = random.multivariate_normal(prng_key, mean, cov, method="svd").reshape(*eps.shape)
+            return out
+        case _:
+            raise ValueError(f"Unknown mode: {eps_p_mode}")
 
 
 def unroll(
@@ -119,7 +157,9 @@ def unroll(
     tN: Array,
     prng_key: Array,
     n_eps_p: int,
+    eps_p_mode: str,
     n_const_p: int,
+    const_p_val: float,
     save_interval: int,
     disable_pbar: bool,
 ) -> Tuple[Array, Array, Array | None, Array | None, Array, Array | None, Array | None]:
@@ -143,10 +183,14 @@ def unroll(
         p = jnp.concatenate(
             [
                 jnp.zeros((1,) + eps.shape[-2:]),
-                (eps * random.normal(subkey_1, shape=(n_eps_p + n_const_p + 1,) + eps.shape[-2:]))[
-                    1 : n_eps_p + 1, ...
-                ],
-                0.1 * solver.h * random.normal(subkey_2, shape=(n_const_p,) + eps.shape[-2:]),
+                draw_eps_perturbations(
+                    jnp.broadcast_to(eps, (n_eps_p + n_const_p + 1,) + eps.shape[-2:])[
+                        1 : n_eps_p + 1, ...
+                    ],
+                    subkey_1,
+                    eps_p_mode,
+                ),
+                const_p_val * random.normal(subkey_2, shape=(n_const_p,) + eps.shape[-2:]),
             ],
             axis=0,
         )  # [P, N, D]
