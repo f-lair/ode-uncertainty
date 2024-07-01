@@ -12,13 +12,15 @@ def test_rkf45_logistic():
     x0 = [[0.01]]
 
     ode = Logistic()
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), jnp.array(dt))
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, jnp.array(dt))
 
     ts = jnp.arange(t0, tN, dt)
 
     xs = [jnp.array(x0)]
     for _ in range(len(ts) - 1):
-        _, x, _ = solver.step()
+        t, x, _, _ = solver.step(t, x)
         xs.append(x)
     xs = jnp.concatenate(xs)
 
@@ -33,12 +35,16 @@ def test_rkf45_logistic_auto_adaptive():
     x0 = [[0.01]]
 
     ode = Logistic()
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), adaptive_control=True)
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, adaptive_control=True)
+    dt = solver.initial_step_size()
 
     ts = [jnp.array(t0)]
     xs = [jnp.array(x0)]
-    while jnp.any(solver.t < tN):
-        t, x, _ = solver.step()
+    c = 0
+    while jnp.any(t < tN):
+        t, x, _, dt = solver.step(t, x, dt)
         xs.append(x)
         ts.append(t)
     xs = jnp.concatenate(xs)
@@ -58,13 +64,15 @@ def test_rkf45_rlc_circuit_1():
     ode = RLCCircuit(
         resistance=jnp.array(2500), inductance=jnp.array(400), capacitance=jnp.array(2.5e-5)
     )
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), jnp.array(dt))
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, jnp.array(dt))
 
     ts = jnp.arange(t0, tN, dt)
 
     xs = [jnp.array(x0)]
     for _ in range(len(ts) - 1):
-        _, x, _ = solver.step()
+        t, x, _, _ = solver.step(t, x)
         xs.append(x)
     xs = jnp.stack(xs)[:, 0]
 
@@ -81,12 +89,15 @@ def test_rkf45_rlc_circuit_1_auto_adaptive():
     ode = RLCCircuit(
         resistance=jnp.array(2500), inductance=jnp.array(400), capacitance=jnp.array(2.5e-5)
     )
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), adaptive_control=True)
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, adaptive_control=True)
+    dt = solver.initial_step_size()
 
     ts = [jnp.array(t0)]
     xs = [jnp.array(x0)]
-    while jnp.any(solver.t < tN):
-        t, x, _ = solver.step()
+    while jnp.any(t < tN):
+        t, x, _, dt = solver.step(t, x, dt)
         xs.append(x)
         ts.append(t)
     xs = jnp.stack(xs)[:, 0]
@@ -106,13 +117,15 @@ def test_rkf45_rlc_circuit_2():
     ode = RLCCircuit(
         resistance=jnp.array(4000), inductance=jnp.array(160), capacitance=jnp.array(4e-5)
     )
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), jnp.array(dt))
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, jnp.array(dt))
 
     ts = jnp.arange(t0, tN, dt)
 
     xs = [jnp.array(x0)]
     for _ in range(len(ts) - 1):
-        _, x, _ = solver.step()
+        t, x, _, _ = solver.step(t, x)
         xs.append(x)
     xs = jnp.stack(xs)[:, 0]
 
@@ -129,12 +142,15 @@ def test_rkf45_rlc_circuit_2_auto_adaptive():
     ode = RLCCircuit(
         resistance=jnp.array(4000), inductance=jnp.array(160), capacitance=jnp.array(4e-5)
     )
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), adaptive_control=True)
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, adaptive_control=True)
+    dt = solver.initial_step_size()
 
     ts = [jnp.array(t0)]
     xs = [jnp.array(x0)]
-    while jnp.any(solver.t < tN):
-        t, x, _ = solver.step()
+    while jnp.any(t < tN):
+        t, x, _, dt = solver.step(t, x, dt)
         xs.append(x)
         ts.append(t)
     xs = jnp.stack(xs)[:, 0]
@@ -154,13 +170,15 @@ def test_rkf45_rlc_circuit_3():
     ode = RLCCircuit(
         resistance=jnp.array(5000), inductance=jnp.array(160), capacitance=jnp.array(4e-5)
     )
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), jnp.array(dt))
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, jnp.array(dt))
 
     ts = jnp.arange(t0, tN, dt)
 
     xs = [jnp.array(x0)]
     for _ in range(len(ts) - 1):
-        _, x, _ = solver.step()
+        t, x, _, _ = solver.step(t, x)
         xs.append(x)
     xs = jnp.stack(xs)[:, 0]
 
@@ -177,12 +195,15 @@ def test_rkf45_rlc_circuit_3_auto_adaptive():
     ode = RLCCircuit(
         resistance=jnp.array(5000), inductance=jnp.array(160), capacitance=jnp.array(4e-5)
     )
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), adaptive_control=True)
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, adaptive_control=True)
+    dt = solver.initial_step_size()
 
     ts = [jnp.array(t0)]
     xs = [jnp.array(x0)]
-    while jnp.any(solver.t < tN):
-        t, x, _ = solver.step()
+    while jnp.any(t < tN):
+        t, x, _, dt = solver.step(t, x, dt)
         xs.append(x)
         ts.append(t)
     xs = jnp.stack(xs)[:, 0]
@@ -200,13 +221,15 @@ def test_rk_batched():
     x0 = [[[0.01]], [[0.01]]]
 
     ode = Logistic()
-    solver = RKF45(ode, jnp.array(t0), jnp.array(x0), jnp.array(dt))
+    t = jnp.array(t0)
+    x = jnp.array(x0)
+    solver = RKF45(ode, t, x, jnp.array(dt))
 
     ts = jnp.stack([jnp.arange(t0, tN[0], dt[0]), jnp.arange(t0, tN[1], dt[1])], axis=1)
 
     xs = [jnp.array(x0)]
     for _ in range(len(ts) - 1):
-        _, x, _ = solver.step()
+        t, x, _, _ = solver.step(t, x)
         xs.append(x)
     xs = jnp.stack(xs)[:, :, 0]
 

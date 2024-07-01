@@ -163,21 +163,23 @@ def unroll(
     save_interval: int,
     disable_pbar: bool,
 ) -> Tuple[Array, Array, Array | None, Array | None, Array, Array | None, Array | None]:
-    ts = [solver.t[0]]
-    xs = [solver.x[0]]
+    ts = [solver.t0[0]]
+    xs = [solver.x0[0]]
     if n_eps_p > 0:
-        xs_eps_p = [jnp.broadcast_to(solver.x, (n_eps_p,) + solver.x.shape[-2:])]
-        epss_eps_p = [jnp.zeros((n_eps_p,) + solver.x.shape[-2:])]
+        xs_eps_p = [jnp.broadcast_to(solver.x0, (n_eps_p,) + solver.x0.shape[-2:])]
+        epss_eps_p = [jnp.zeros((n_eps_p,) + solver.x0.shape[-2:])]
     if n_const_p > 0:
-        xs_const_p = [jnp.broadcast_to(solver.x, (n_const_p,) + solver.x.shape[-2:])]
-        epss_const_p = [jnp.zeros((n_const_p,) + solver.x.shape[-2:])]
-    epss = [jnp.zeros(solver.x.shape[-2:])]
+        xs_const_p = [jnp.broadcast_to(solver.x0, (n_const_p,) + solver.x0.shape[-2:])]
+        epss_const_p = [jnp.zeros((n_const_p,) + solver.x0.shape[-2:])]
+    epss = [jnp.zeros(solver.x0.shape[-2:])]
 
     counter = 0
+    t = solver.t0
+    x = solver.x0
     pbar = tqdm(total=tN.item(), disable=disable_pbar, unit="sec")
 
-    while jnp.any(solver.t < tN):
-        t, x, eps = solver.step()  # [P, N, D]
+    while jnp.any(t < tN):
+        t, x, eps, _ = solver.step(t, x)  # [P, N, D]
         prng_key, subkey_1 = random.split(prng_key)
         prng_key, subkey_2 = random.split(prng_key)
         p = jnp.concatenate(
@@ -194,17 +196,16 @@ def unroll(
             ],
             axis=0,
         )  # [P, N, D]
-        x_p = x + p  # [P, N, D]
-        solver.x = x_p
+        x = x + p  # [P, N, D]
 
         if counter % save_interval == 0:
             eps_b = jnp.broadcast_to(eps, (n_eps_p + n_const_p + 1,) + eps.shape[-2:])
-            xs.append(x_p[0])
+            xs.append(x[0])
             if n_eps_p > 0:
-                xs_eps_p.append(x_p[1 : n_eps_p + 1])
+                xs_eps_p.append(x[1 : n_eps_p + 1])
                 epss_eps_p.append(eps_b[1 : n_eps_p + 1])
             if n_const_p > 0:
-                xs_const_p.append(x_p[1 + n_eps_p :])
+                xs_const_p.append(x[1 + n_eps_p :])
                 epss_const_p.append(eps_b[1 + n_eps_p :])
             epss.append(eps_b[0])
             ts.append(t[0])

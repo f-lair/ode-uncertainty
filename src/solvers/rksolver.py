@@ -55,8 +55,8 @@ class RKSolver:
 
         # IVP definition
         self.fn = fn
-        self.t = t0  # [...]
-        self.x = x0  # [..., N, D]
+        self.t0 = t0  # [...]
+        self.x0 = x0  # [..., N, D]
 
         # Adaptive step size control
         self.adaptive_control = adaptive_control
@@ -80,6 +80,24 @@ class RKSolver:
             self.h = self.initial_step_size()
         else:
             self.h = step_size
+
+        if self.adaptive_control:
+            self.step = partial(
+                self._adaptive_step,
+                self.fn,
+                self.A,
+                self.b,
+                self.c,
+                self.s,
+                self.atol,
+                self.rtol,
+                self.max_h,
+                self.err_exp,
+            )  # type: ignore
+        else:
+            self.step = jax.jit(
+                partial(self._fixed_step, self.fn, self.A, self.b, self.c, self.h, self.s)
+            )  # type: ignore
 
     @staticmethod
     def _A() -> Array:
@@ -280,18 +298,18 @@ class RKSolver:
             1 / (x.shape[-2] * x.shape[-1]) * jnp.sum((x / scale) ** 2, axis=(-1, -2))
         )
 
-        scale = self.atol + jnp.abs(self.x) * self.rtol  # [..., N, D]
-        x_prime = self.fn(self.t, self.x)  # [..., N, D]
+        scale = self.atol + jnp.abs(self.x0) * self.rtol  # [..., N, D]
+        x_prime = self.fn(self.t0, self.x0)  # [..., N, D]
 
-        d0 = l2_norm(self.x, scale)  # [...]
+        d0 = l2_norm(self.x0, scale)  # [...]
         d1 = l2_norm(x_prime, scale)  # [...]
 
         # First guess for initial step size
         h0 = jnp.where(jnp.logical_or(d0 < 1e-5, d1 < 1e-5), 1e-6, 0.01 * d0 / d1)  # [...]
 
         # Explicit Euler step
-        x_next = self.x + h0 * x_prime  # [..., N, D]
-        x_prime_next = self.fn(self.t + h0, x_next)  # [..., N, D]
+        x_next = self.x0 + h0 * x_prime  # [..., N, D]
+        x_prime_next = self.fn(self.t0 + h0, x_next)  # [..., N, D]
 
         # Estimate of second derivative
         d2 = l2_norm(x_prime_next - x_prime, scale) / h0  # [...]
@@ -304,7 +322,92 @@ class RKSolver:
         )  # [...]
         return jnp.minimum(100 * h0, h1)  # [...]
 
-    def step(self) -> Tuple[Array, Array, Array]:
+    @staticmethod
+    def _fixed_step(
+        fn: ODE,
+        A: Array,
+        b: Array,
+        c: Array,
+        h: Array,
+        s: int,
+        t: Array,
+        x: Array,
+    ) -> Tuple[Array, Array, Array, Array]:
+        t_next = t + h
+        x_next = RKSolver._step(
+            RKSolver._compute_node, fn, A, b, c, h, s, t_next, x
+        )  # [..., N, D, 2]
+        eps, _ = RKSolver._eps_scale(x_next, 0.0, 0.0)  # [..., N, D]
+
+        return t_next, x_next[..., 1], eps, h
+
+    @staticmethod
+    def _adaptive_step(
+        fn: ODE,
+        A: Array,
+        b: Array,
+        c: Array,
+        s: int,
+        atol: float | Array,
+        rtol: float | Array,
+        max_h: float,
+        err_exp: float,
+        t: Array,
+        x: Array,
+        h: Array,
+    ) -> Tuple[Array, Array, Array, Array]:
+        t_next = t + h
+        h_next = jnp.copy(h)
+
+        # Initially, no step is accepted or rejected, since no step has happened yet
+        step_accepted = jnp.zeros(x.shape[:-2], dtype=jnp.bool)  # [...]
+        step_rejected = jnp.zeros_like(step_accepted)  # [...]
+
+        # Loop until all batched steps are accepted
+        while not jnp.all(step_accepted):
+            # Perform step
+            x_next = RKSolver._step(
+                RKSolver._compute_node,
+                fn,
+                A,
+                b,
+                c,
+                h_next,
+                s,
+                t,
+                x,
+            )  # [..., N, D, 2]
+
+            # Compute local truncation error
+            eps, scale = RKSolver._eps_scale(x_next, atol, rtol)  # [..., N, D], [..., N, D]
+            err = RKSolver._L2_error(x_next, scale)  # [...]
+
+            # Determine scaling factor for adaptive step size control based on error
+            factor = jnp.minimum(
+                RKSolver.MAX_FACTOR,
+                jnp.maximum(RKSolver.MIN_FACTOR, RKSolver.SAFETY_FACTOR * err**err_exp),
+            )  # [...]
+            # After rejection, the factor should be upper bounded by 1
+            factor = jnp.where(step_rejected, jnp.minimum(1.0, factor), factor)  # [...]
+
+            # Rescale step size
+            h_next = jnp.minimum(max_h, jnp.where(step_accepted, h_next, factor * h_next))  # [...]
+
+            # Update step acception and rejection flags
+            step_accepted = jnp.where(
+                jnp.logical_or(step_accepted, err <= 1.0), True, False
+            )  # [...]
+            step_rejected = jnp.where(
+                jnp.logical_and(~step_accepted, err > 1.0), True, False
+            )  # [...]
+
+            # Update next time point
+            t_next = jnp.where(step_accepted, t_next, t + h_next)  # [...]
+
+        return t_next, x_next[..., 1], eps, h_next
+
+    @staticmethod
+    def step(t: Array, x: Array, h: Array | None = None) -> Tuple[Array, Array, Array, Array]:
         """
         Performs single integration step and adapts step size [1], if needed.
         D: Latent dimension.
@@ -317,72 +420,11 @@ class RKSolver:
         Args:
             t (Array): Time [...].
             x (Array): State [..., N, D].
+            h (Array | None, optional): Step size [...]. Defaults to None.
 
         Returns:
-            Tuple[Array, Array, Array]: Next time [...], next state [..., N, D],
-                local truncation error [..., N, D].
+            Tuple[Array, Array, Array, Array]: Next time [...], next state [..., N, D],
+                local truncation error [..., N, D], next step size [...].
         """
 
-        t_next = self.t + self.h  # [...]
-
-        if self.adaptive_control:
-            # Initially, no step is accepted or rejected, since no step has happened yet
-            step_accepted = jnp.zeros(self.x.shape[:-2], dtype=jnp.bool)  # [...]
-            step_rejected = jnp.zeros_like(step_accepted)  # [...]
-
-            # Loop until all batched steps are accepted
-            while not jnp.all(step_accepted):
-                # Perform step
-                x_next = self._step(
-                    self._compute_node,
-                    self.fn,
-                    self.A,
-                    self.b,
-                    self.c,
-                    self.h,
-                    self.s,
-                    self.t,
-                    self.x,
-                )  # [..., N, D, 2]
-
-                # Compute local truncation error
-                eps, scale = self._eps_scale(
-                    x_next, self.atol, self.rtol
-                )  # [..., N, D], [..., N, D]
-                err = self._L2_error(x_next, scale)  # [...]
-
-                # Determine scaling factor for adaptive step size control based on error
-                factor = jnp.minimum(
-                    self.MAX_FACTOR,
-                    jnp.maximum(self.MIN_FACTOR, self.SAFETY_FACTOR * err**self.err_exp),
-                )  # [...]
-                # After rejection, the factor should be upper bounded by 1
-                factor = jnp.where(step_rejected, jnp.minimum(1.0, factor), factor)  # [...]
-
-                # Rescale step size
-                self.h = jnp.minimum(
-                    self.max_h, jnp.where(step_accepted, self.h, factor * self.h)
-                )  # [...]
-
-                # Update step acception and rejection flags
-                step_accepted = jnp.where(
-                    jnp.logical_or(step_accepted, err <= 1.0), True, False
-                )  # [...]
-                step_rejected = jnp.where(
-                    jnp.logical_and(~step_accepted, err > 1.0), True, False
-                )  # [...]
-
-                # Update next time point
-                t_next = jnp.where(step_accepted, t_next, self.t + self.h)  # [...]
-        else:
-            x_next = self._step(
-                self._compute_node, self.fn, self.A, self.b, self.c, self.h, self.s, self.t, self.x
-            )  # [..., N, D, 2]
-
-            eps, _ = self._eps_scale(x_next, self.atol, self.rtol)  # [..., N, D]
-
-        # Update internal state
-        self.t = t_next  # [...]
-        self.x = x_next[..., 1]  # [..., N, D]
-
-        return self.t, self.x, eps  # [...], [..., N, D], [..., N, D]
+        raise NotImplementedError
