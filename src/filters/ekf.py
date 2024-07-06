@@ -13,8 +13,7 @@ from src.solvers.rksolver import RKSolver
 class EKF(Filter):
 
     def __init__(self, rk_solver: RKSolver, P0: Array, sigma_fn: SigmaFn) -> None:
-        super().__init__(rk_solver, P0)
-        self.sigma_fn = sigma_fn
+        super().__init__(rk_solver, P0, sigma_fn)
 
     @staticmethod
     def _rk_solver_step_AD(
