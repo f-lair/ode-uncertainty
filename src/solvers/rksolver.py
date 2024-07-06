@@ -190,7 +190,7 @@ class RKSolver:
             Array: Updated node vectors [..., N, D, S].
         """
 
-        k = fn(ts[idx], x + h[..., None, None] * (ks @ A[idx]))  # [..., N, D]
+        k = fn(ts[..., idx], x + h[..., None, None] * (ks @ A[idx]))  # [..., N, D]
         return ks.at[..., idx].set(k)  # [..., N, D, S]
 
     @staticmethod
@@ -333,10 +333,12 @@ class RKSolver:
         t: Array,
         x: Array,
     ) -> Tuple[Array, Array, Array, Array]:
-        t_next = t + h
-        x_next = RKSolver._step(
-            RKSolver._compute_node, fn, A, b, c, h, s, t_next, x
-        )  # [..., N, D, 2]
+        h = jnp.broadcast_to(
+            jnp.expand_dims(h, tuple(range(x.ndim - 2 - h.ndim))), x.shape[:-2]
+        )  # [...]
+        t_next = t + h  # [...]
+
+        x_next = RKSolver._step(RKSolver._compute_node, fn, A, b, c, h, s, t, x)  # [..., N, D, 2]
         eps, _ = RKSolver._eps_scale(x_next, 0.0, 0.0)  # [..., N, D]
 
         return t_next, x_next[..., 1], eps, h
