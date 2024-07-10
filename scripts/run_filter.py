@@ -10,10 +10,10 @@ from jax import Array
 from jax import numpy as jnp
 from tqdm import tqdm
 
-from src.filters import EKF
+from src.filters import EKF, EKF_IND
 from src.filters.filter import Filter
-from src.filters.sigma_fns import DiagonalSigma, OuterSigma
-from src.ode import Lorenz, VanDerPol
+from src.filters.sigma_fns import DiagonalSigma, OuterSigma, OuterSqrtSigma
+from src.ode import LCAO, Lorenz, VanDerPol
 from src.solvers import RKF45
 
 
@@ -26,8 +26,8 @@ def main() -> None:
         "--filter",
         type=str,
         default="EKF",
-        help="Filter: EKF (default).",
-        choices=["EKF"],
+        help="Filter: EKF (default), EKF-IND.",
+        choices=["EKF", "EKF-IND"],
     )
     parser.add_argument(
         "--solver",
@@ -40,15 +40,15 @@ def main() -> None:
         "--ode",
         type=str,
         default="Lorenz",
-        help="ODE: Lorenz (default), VanDerPol.",
-        choices=["Lorenz", "VanDerPol"],
+        help="ODE: Lorenz (default), VanDerPol, LCAO.",
+        choices=["Lorenz", "VanDerPol", "LCAO"],
     )
     parser.add_argument(
         "--sigma-fn",
         type=str,
         default="Diagonal",
-        help="Sigma function: Diagonal (default), Outer.",
-        choices=["Diagonal", "Outer"],
+        help="Sigma function: Diagonal (default), OuterSqrt, Outer.",
+        choices=["Diagonal", "OuterSqrt", "Outer"],
     )
     parser.add_argument("--x0", type=str, required=True, help="Initial value [N, D].")
     parser.add_argument(
@@ -75,12 +75,16 @@ def main() -> None:
             ode = Lorenz()
         case "VanDerPol":
             ode = VanDerPol(jnp.array(5))
+        case "LCAO":
+            ode = LCAO()
         case _:
             raise ValueError(f"Unknown ODE: {args.ode}")
 
     match args.sigma_fn:
         case "Diagonal":
             sigma_fn = DiagonalSigma()
+        case "OuterSqrt":
+            sigma_fn = OuterSqrtSigma()
         case "Outer":
             sigma_fn = OuterSigma()
         case _:
@@ -104,6 +108,8 @@ def main() -> None:
     match args.filter:
         case "EKF":
             filter_ = EKF(solver, P0, sigma_fn)
+        case "EKF-IND":
+            filter_ = EKF_IND(solver, P0, sigma_fn)
         case _:
             raise ValueError(f"Unknown filter: {args.filter}")
 
