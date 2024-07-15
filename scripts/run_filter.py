@@ -10,7 +10,7 @@ from jax import Array
 from jax import numpy as jnp
 from tqdm import tqdm
 
-from src.filters import EKF, UKF
+from src.filters import EKF, UKF, UKF_IND
 from src.filters.filter import Filter
 from src.filters.sigma_fns import DiagonalSigma, OuterSigma
 from src.ode import Lorenz, VanDerPol
@@ -26,8 +26,8 @@ def main() -> None:
         "--filter",
         type=str,
         default="EKF",
-        help="Filter: EKF (default), UKF.",
-        choices=["EKF", "UKF"],
+        help="Filter: EKF (default), UKF, UKF-IND.",
+        choices=["EKF", "UKF", "UKF-IND"],
     )
     parser.add_argument(
         "--solver",
@@ -106,6 +106,8 @@ def main() -> None:
             filter_ = EKF(solver, P0, sigma_fn)
         case "UKF":
             filter_ = UKF(solver, P0, sigma_fn)
+        case "UKF-IND":
+            filter_ = UKF_IND(solver, P0, sigma_fn)
         case _:
             raise ValueError(f"Unknown filter: {args.filter}")
 
