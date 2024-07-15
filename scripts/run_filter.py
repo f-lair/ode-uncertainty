@@ -13,7 +13,7 @@ from tqdm import tqdm
 from src.filters import EKF, UKF, UKF_SQRT
 from src.filters.filter import Filter
 from src.filters.sigma_fns import DiagonalSigma, OuterSigma
-from src.ode import LCAO, Lorenz, VanDerPol
+from src.ode import LCAO, Lorenz, LotkaVolterra, VanDerPol
 from src.solvers import RKF45
 
 
@@ -40,8 +40,8 @@ def main() -> None:
         "--ode",
         type=str,
         default="Lorenz",
-        help="ODE: Lorenz (default), VanDerPol, LCAO.",
-        choices=["Lorenz", "VanDerPol", "LCAO"],
+        help="ODE: Lorenz (default), VanDerPol, LCAO, LotkaVolterra.",
+        choices=["Lorenz", "VanDerPol", "LCAO", "LotkaVolterra"],
     )
     parser.add_argument(
         "--sigma-fn",
@@ -77,6 +77,8 @@ def main() -> None:
             ode = VanDerPol(jnp.array(5))
         case "LCAO":
             ode = LCAO()
+        case "LotkaVolterra":
+            ode = LotkaVolterra()
         case _:
             raise ValueError(f"Unknown ODE: {args.ode}")
 
@@ -113,13 +115,13 @@ def main() -> None:
         case _:
             raise ValueError(f"Unknown filter: {args.filter}")
 
-    ts, xs, Ps, jacs, sigmas = unroll(
+    ts, xs, Ps, dx_dts, jacs, sigmas = unroll(
         filter_,
         tN,
         save_interval,
         disable_pbar,
     )
-    store(ts, xs, Ps, jacs, sigmas, out_filepath)
+    store(ts, xs, Ps, dx_dts, jacs, sigmas, out_filepath)
 
 
 def unroll(
@@ -127,10 +129,11 @@ def unroll(
     tN: Array,
     save_interval: int,
     disable_pbar: bool,
-) -> Tuple[Array, Array, Array, Array | None, Array | None]:
+) -> Tuple[Array, Array, Array, Array, Array | None, Array | None]:
     ts = [filter_.t[0]]
     xs = [filter_.m[0]]
     Ps = [filter_.P]
+    dx_dts = [filter_.rk_solver.fn(filter_.t, filter_.m)[0]]
 
     counter = 0
     t = filter_.t
@@ -140,11 +143,13 @@ def unroll(
 
     while jnp.any(t < tN):
         t, x, P = filter_.predict()  # [1], [1, N, D], [N*D, N*D]
+        dx_dt = filter_.rk_solver.fn(t, x)  # [1, N, D]
 
         if counter % save_interval == 0:
             xs.append(x[0])
             ts.append(t[0])
             Ps.append(P)
+            dx_dts.append(dx_dt[0])
         counter += 1
         pbar.update(t.item() - pbar.n)
 
@@ -154,19 +159,21 @@ def unroll(
     ts = jnp.stack(ts)
     xs = jnp.stack(xs)
     Ps = jnp.stack(Ps)
+    dx_dts = jnp.stack(dx_dts)
     if isinstance(filter_, EKF):
         jacs = jnp.stack(filter_.jac_buffer)
         sigmas = jnp.stack(filter_.sigma_buffer)
     else:
         jacs, sigmas = None, None
 
-    return ts, xs, Ps, jacs, sigmas
+    return ts, xs, Ps, dx_dts, jacs, sigmas
 
 
 def store(
     ts: Array,
     xs: Array,
     Ps: Array,
+    dx_dts: Array,
     jacs: Array | None,
     sigmas: Array | None,
     out_filepath: str,
@@ -175,6 +182,7 @@ def store(
     h5f.create_dataset("ts", data=ts)
     h5f.create_dataset("xs", data=xs)
     h5f.create_dataset("Ps", data=Ps)
+    h5f.create_dataset("dx_dts", data=dx_dts)
     if jacs is not None:
         h5f.create_dataset("Jacs", data=jacs)
     if sigmas is not None:
