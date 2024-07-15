@@ -15,7 +15,7 @@ from src.solvers.rksolver import RKSolver
 class EKF_IND(Filter):
 
     def __init__(self, rk_solver: RKSolver, P0: Array, sigma_fn: SigmaFn) -> None:
-        super().__init__(rk_solver, P0)
+        super().__init__(rk_solver, P0, sigma_fn)
         self.sigma_fn = sigma_fn
         self.extract_block_diag_jit = jax.jit(
             partial(EKF_IND.extract_block_diag, n=rk_solver.x0.shape[-1])

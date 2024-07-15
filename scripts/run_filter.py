@@ -10,7 +10,7 @@ from jax import Array
 from jax import numpy as jnp
 from tqdm import tqdm
 
-from src.filters import EKF, EKF_IND, UKF, UKF_IND
+from src.filters import EKF, UKF, UKF_SQRT
 from src.filters.filter import Filter
 from src.filters.sigma_fns import DiagonalSigma, OuterSigma
 from src.ode import LCAO, Lorenz, VanDerPol
@@ -26,8 +26,8 @@ def main() -> None:
         "--filter",
         type=str,
         default="EKF",
-        help="Filter: EKF (default), EKF-IND, UKF, UKF-IND.",
-        choices=["EKF", "EKF-IND", "UKF", "UKF-IND"],
+        help="Filter: EKF (default), UKF, UKF-SQRT.",
+        choices=["EKF", "UKF", "UKF-SQRT"],
     )
     parser.add_argument(
         "--solver",
@@ -106,12 +106,10 @@ def main() -> None:
     match args.filter:
         case "EKF":
             filter_ = EKF(solver, P0, sigma_fn)
-        case "EKF-IND":
-            filter_ = EKF_IND(solver, P0, sigma_fn)
         case "UKF":
             filter_ = UKF(solver, P0, sigma_fn)
-        case "UKF-IND":
-            filter_ = UKF_IND(solver, P0, sigma_fn)
+        case "UKF-SQRT":
+            filter_ = UKF_SQRT(solver, P0, sigma_fn)
         case _:
             raise ValueError(f"Unknown filter: {args.filter}")
 
@@ -129,7 +127,7 @@ def unroll(
     tN: Array,
     save_interval: int,
     disable_pbar: bool,
-) -> Tuple[Array, Array, Array, Array, Array]:
+) -> Tuple[Array, Array, Array, Array | None, Array | None]:
     ts = [filter_.t[0]]
     xs = [filter_.m[0]]
     Ps = [filter_.P]
@@ -156,8 +154,11 @@ def unroll(
     ts = jnp.stack(ts)
     xs = jnp.stack(xs)
     Ps = jnp.stack(Ps)
-    jacs = jnp.stack(filter_.jac_buffer)
-    sigmas = jnp.stack(filter_.sigma_buffer)
+    if isinstance(filter_, EKF):
+        jacs = jnp.stack(filter_.jac_buffer)
+        sigmas = jnp.stack(filter_.sigma_buffer)
+    else:
+        jacs, sigmas = None, None
 
     return ts, xs, Ps, jacs, sigmas
 
@@ -166,16 +167,18 @@ def store(
     ts: Array,
     xs: Array,
     Ps: Array,
-    jacs: Array,
-    sigmas: Array,
+    jacs: Array | None,
+    sigmas: Array | None,
     out_filepath: str,
 ) -> None:
     h5f = h5py.File(out_filepath, "w")
     h5f.create_dataset("ts", data=ts)
     h5f.create_dataset("xs", data=xs)
     h5f.create_dataset("Ps", data=Ps)
-    h5f.create_dataset("Jacs", data=jacs)
-    h5f.create_dataset("Sigmas", data=sigmas)
+    if jacs is not None:
+        h5f.create_dataset("Jacs", data=jacs)
+    if sigmas is not None:
+        h5f.create_dataset("Sigmas", data=sigmas)
     h5f.close()
 
 

@@ -12,6 +12,7 @@ from src.solvers.rksolver import RKSolver
 
 
 class UKF(Filter):
+    """Unscented Kalman Filter."""
 
     def __init__(
         self,
@@ -23,6 +24,22 @@ class UKF(Filter):
         kappa: float | None = None,
         anomaly_detection: bool = False,
     ) -> None:
+        """
+        Initializes filter.
+        D: Latent dimension.
+        N: ODE order.
+
+        Args:
+            rk_solver (RKSolver): RK solver.
+            P0 (Array): Initial covariance [N*D, N*D].
+            sigma_fn (SigmaFn): Sigma function.
+            alpha (float, optional): UKF parameter alpha. Defaults to 0.1.
+            beta (float, optional): UKF parameter beta. Defaults to 2.0.
+            kappa (float | None, optional): UKF parameter kappa. Chosen automatically, if None.
+                Defaults to None.
+            anomaly_detection (bool, optional): Activates anomaly detection. Defaults to False.
+        """
+
         super().__init__(rk_solver, P0, sigma_fn)
         self.alpha = alpha
         self.beta = beta
@@ -62,6 +79,28 @@ class UKF(Filter):
         n: int,
         lambda_: float,
     ) -> Tuple[Array, Array, Array, Array]:
+        """
+        Jitted predict function of EKF.
+        D: Latent dimension.
+        N: ODE order.
+
+        Args:
+            step_fn (Callable[[Array, Array], Tuple[Array, Array, Array, Array]]):
+                RK-solver step function.
+            sigma_fn (SigmaFn): Sigma function.
+            t (Array): Time [1].
+            m (Array): Mean state [1, N, D].
+            P (Array): Covariance [N*C, N*C].
+            w_m (Array): Weights for mean computation [4*N*D+1].
+            w_c (Array): Weights for covariance computation [4*N*D+1].
+            n (int): Number of sigma points (2*N*D).
+            lambda_ (float): Scaling factor lambda.
+
+        Returns:
+            Tuple[Array, Array, Array, Array]: Time [1], mean state [1, N, D],
+                covariance [N*D, N*D], anomaly flags [...].
+        """
+
         anomaly_flags = []
 
         x_P = jnp.block(
@@ -115,8 +154,6 @@ class UKF(Filter):
         )  # [4*N*D+1, N*D]
         m_next = x_m_next.T @ w_m  # [N*D]
 
-        # print("m_next", m_next)
-
         anomaly_flags.append(jnp.isinf(m_next).any())
         anomaly_flags.append(jnp.isnan(m_next).any())
 
@@ -135,6 +172,15 @@ class UKF(Filter):
         )
 
     def predict(self) -> Tuple[Array, Array, Array]:
+        """
+        Predicts state after performing one step of the ODE solver.
+        D: Latent dimension.
+        N: ODE order.
+
+        Returns:
+            Tuple[Array, Array, Array]: Time [1], mean state [1, N, D], covariance [N*D, N*D].
+        """
+
         self.t, self.m, self.P, anomaly_flags = self._predict(
             self.rk_solver.step,
             self.sigma_sqrt_fn,
@@ -147,16 +193,19 @@ class UKF(Filter):
             self.lambda_,
         )
 
-        # if jnp.any(anomaly_flags):
-        #     print("OLD", self.m)
-        #     print("NEW", m_next)
-
         if self.anomaly_detection:
             self.detect_anomaly(anomaly_flags)
 
         return self.t, self.m, self.P
 
     def detect_anomaly(self, anomaly_flags: Array) -> None:
+        """
+        Detects anomaly using captured flags.
+
+        Args:
+            anomaly_flags (Array): Anomaly flags [...].
+        """
+
         if anomaly_flags[0]:
             raise ValueError("Anomaly Detection: \"x_m\" contains +/-inf!")
         elif anomaly_flags[1]:

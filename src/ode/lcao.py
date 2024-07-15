@@ -10,8 +10,8 @@ class LCAO(ODE):
     def __init__(
         self,
         lin_coeff: Array = jnp.array(1.0),
-        cubic_coeff: Array = jnp.array(1.0),
-        coupling_coeff: Array = jnp.array(1.0),
+        cubic_coeff: Array = jnp.array(2.0),
+        coupling_coeff: Array = jnp.array(0.5),
     ) -> None:
         """
         Initialization for LCAO.
@@ -23,9 +23,9 @@ class LCAO(ODE):
 
         Args:
             lin_coeff (Array, optional): Coefficient for linear term. Defaults to jnp.array(1.0).
-            cubic_coeff (Array, optional): Coefficient for cubic term. Defaults to jnp.array(1.0).
+            cubic_coeff (Array, optional): Coefficient for cubic term. Defaults to jnp.array(2.0).
             coupling_coeff (Array, optional): Coefficient for coupling term. Defaults to
-                jnp.array(1.0).
+                jnp.array(0.5).
         """
 
         self.A = lin_coeff
