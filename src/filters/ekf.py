@@ -3,6 +3,7 @@ from typing import Callable, Tuple
 
 import jax
 from jax import Array
+from jax import numpy as jnp
 
 from src.filters.filter import Filter
 from src.filters.sigma_fns import SigmaFn
@@ -12,7 +13,14 @@ from src.solvers.rksolver import RKSolver
 class EKF(Filter):
     """Extended Kalman Filter."""
 
-    def __init__(self, rk_solver: RKSolver, P0: Array, sigma_fn: SigmaFn) -> None:
+    def __init__(
+        self,
+        rk_solver: RKSolver,
+        P0: Array,
+        sigma_fn: SigmaFn,
+        clip_gradients: float = jnp.inf,
+        norm: float = 2.0,
+    ) -> None:
         """
         Initializes filter.
         D: Latent dimension.
@@ -22,12 +30,16 @@ class EKF(Filter):
             rk_solver (RKSolver): RK solver.
             P0 (Array): Initial covariance [N*D, N*D].
             sigma_fn (SigmaFn): Sigma function.
+            clip_gradients (float, optional): Clips gradients, if <inf. Defaults to jnp.inf.
+            norm (float, optional): Norm used for gradient clipping. Defaults to 2.0.
         """
 
         super().__init__(rk_solver, P0, sigma_fn)
         self.sigma_fn = sigma_fn
         self.jac_buffer = []
         self.sigma_buffer = []
+        self.clip_gradients = clip_gradients
+        self.norm = norm
 
     @staticmethod
     def _rk_solver_step_AD(
@@ -58,6 +70,8 @@ class EKF(Filter):
         t: Array,
         m: Array,
         P: Array,
+        clip_gradients: float,
+        norm: float,
     ) -> Tuple[Array, Array, Array, Array, Array]:
         """
         Jitted predict function of EKF.
@@ -77,10 +91,17 @@ class EKF(Filter):
                 covariance [N*D, N*D], Jacobian [N*D, N*D], sigma [N*D, N*D].
         """
 
-        t_next, m_next, eps, _ = step_fn(t, m)
-        jac = jax.jacfwd(partial(EKF._rk_solver_step_AD, step_fn, t))(m).reshape(m.size, m.size)
-        sigma = sigma_fn(eps.ravel())
-        P_next = jac @ P @ jac.T + sigma
+        t_next, m_next, eps, _ = step_fn(t, m)  # [1], [1, N, D], [1, N, D]
+        jac = jax.jacfwd(partial(EKF._rk_solver_step_AD, step_fn, t))(m).reshape(
+            m.size, m.size
+        )  # [N*D, N*D]
+        jac_norm = jnp.linalg.norm(jac, ord=norm, axis=1, keepdims=True)  # [N*D, 1]
+        jac = jnp.where(
+            jac_norm <= clip_gradients, jac, clip_gradients * (jac / jac_norm)
+        )  # [N*D, N*D]
+
+        sigma = sigma_fn(eps.ravel())  # [N*D, N*D]
+        P_next = jac @ P @ jac.T + sigma  # [N*D, N*D]
 
         return t_next, m_next, P_next, jac, sigma
 
