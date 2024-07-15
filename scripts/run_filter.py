@@ -113,13 +113,13 @@ def main() -> None:
         case _:
             raise ValueError(f"Unknown filter: {args.filter}")
 
-    ts, xs, Ps = unroll(
+    ts, xs, Ps, jacs, sigmas = unroll(
         filter_,
         tN,
         save_interval,
         disable_pbar,
     )
-    store(ts, xs, Ps, out_filepath)
+    store(ts, xs, Ps, jacs, sigmas, out_filepath)
 
 
 def unroll(
@@ -127,7 +127,7 @@ def unroll(
     tN: Array,
     save_interval: int,
     disable_pbar: bool,
-) -> Tuple[Array, Array, Array]:
+) -> Tuple[Array, Array, Array, Array, Array]:
     ts = [filter_.t[0]]
     xs = [filter_.m[0]]
     Ps = [filter_.P]
@@ -154,20 +154,26 @@ def unroll(
     ts = jnp.stack(ts)
     xs = jnp.stack(xs)
     Ps = jnp.stack(Ps)
+    jacs = jnp.stack(filter_.jac_buffer)
+    sigmas = jnp.stack(filter_.sigma_buffer)
 
-    return ts, xs, Ps
+    return ts, xs, Ps, jacs, sigmas
 
 
 def store(
     ts: Array,
     xs: Array,
     Ps: Array,
+    jacs: Array,
+    sigmas: Array,
     out_filepath: str,
 ) -> None:
     h5f = h5py.File(out_filepath, "w")
     h5f.create_dataset("ts", data=ts)
     h5f.create_dataset("xs", data=xs)
     h5f.create_dataset("Ps", data=Ps)
+    h5f.create_dataset("Jacs", data=jacs)
+    h5f.create_dataset("Sigmas", data=sigmas)
     h5f.close()
 
 
