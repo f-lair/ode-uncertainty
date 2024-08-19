@@ -107,13 +107,14 @@ def unroll(
             [(0, filter_.batch_dim() - filter_.m.shape[0], 0), (0, 0, 0), (0, 0, 0)],
         )
     )
-    results["Ps"].append(
-        lax.pad(
-            filter_.P,
-            0.0,
-            [(0, filter_.batch_dim() - filter_.P.shape[0], 0), (0, 0, 0), (0, 0, 0)],
+    if "Ps" in results:
+        results["Ps"].append(
+            lax.pad(
+                filter_.P,
+                0.0,
+                [(0, filter_.batch_dim() - filter_.P.shape[0], 0), (0, 0, 0), (0, 0, 0)],
+            )
         )
-    )
     dx_dts = filter_.rk_solver.fn(filter_.t, filter_.m)
     results["dx_dts"].append(
         lax.pad(
