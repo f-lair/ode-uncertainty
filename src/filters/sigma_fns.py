@@ -57,7 +57,7 @@ class DiagonalSigma(SigmaFn):
             Array: Sigma [N*D, N*D].
         """
 
-        return jnp.diag(eps)
+        return jnp.diag(eps**2)
 
     @staticmethod
     def sqrt(eps: Array) -> Array:
@@ -71,7 +71,7 @@ class DiagonalSigma(SigmaFn):
             Array: Sigma^(1/2) [N*D, N*D].
         """
 
-        return jnp.diag(jnp.sqrt(eps))
+        return jnp.diag(eps)
 
 
 class OuterSigma(SigmaFn):
@@ -90,8 +90,7 @@ class OuterSigma(SigmaFn):
             Array: Sigma [N*D, N*D].
         """
 
-        eps_sqrt = jnp.sqrt(eps)
-        return jnp.outer(eps_sqrt, eps_sqrt)
+        return jnp.outer(eps, eps)
 
     @staticmethod
     def sqrt(eps: Array) -> Array:
@@ -105,5 +104,4 @@ class OuterSigma(SigmaFn):
             Array: Sigma^(1/2) [N*D, N*D].
         """
 
-        eps_sqrt = jnp.sqrt(eps)
-        return jnp.outer(eps_sqrt, eps_sqrt) / jnp.sqrt(jnp.dot(eps_sqrt, eps_sqrt))
+        return jnp.outer(eps, eps) / jnp.sqrt(jnp.dot(eps, eps))

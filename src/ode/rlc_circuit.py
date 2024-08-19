@@ -9,24 +9,22 @@ class RLCCircuit(ODE):
 
     def __init__(
         self,
-        resistance: Array = jnp.array(1.0),
-        inductance: Array = jnp.array(1.0),
-        capacitance: Array = jnp.array(1.0),
+        resistance: float = 1.0,
+        inductance: float = 1.0,
+        capacitance: float = 1.0,
     ) -> None:
         """
         Initialization for RLC circuit model.
-        ...: Batch dimension(s).
 
         Args:
-            resistance (Array, optional): Resistance R (Ohm) [...]. Defaults to jnp.array(1.0).
-            inductance (Array, optional): Inductance L (Henry) [...].. Defaults to jnp.array(1.0).
-            capacitance (Array, optional): Capacitance C (Farad) [...].. Defaults to
-                jnp.array(1.0).
+            resistance (float, optional): Resistance R (Ohm). Defaults to 1.0.
+            inductance (float, optional): Inductance L (Henry). Defaults to 1.0.
+            capacitance (float, optional): Capacitance C (Farad). Defaults to 1.0.
         """
 
-        self.R = resistance
-        self.L = inductance
-        self.C = capacitance
+        self.R = jnp.array(resistance)
+        self.L = jnp.array(inductance)
+        self.C = jnp.array(capacitance)
 
         self.delta = 0.5 * self.R / self.L
         self.omega0 = (self.L * self.C) ** (-0.5)

@@ -9,28 +9,26 @@ class LCAO(ODE):
 
     def __init__(
         self,
-        lin_coeff: Array = jnp.array(1.0),
-        cubic_coeff: Array = jnp.array(2.0),
-        coupling_coeff: Array = jnp.array(0.5),
+        lin_coeff: float = 1.0,
+        cubic_coeff: float = 2.0,
+        coupling_coeff: float = 0.5,
     ) -> None:
         """
         Initialization for LCAO.
-        ...: Batch dimension(s).
 
         cf. Steeb, W. H., Louw, J. A., & Villet, C. M. (1987).
         Linearly coupled anharmonic oscillators and integrability.
         Australian journal of physics, 40(5), 587-592.
 
         Args:
-            lin_coeff (Array, optional): Coefficient for linear term. Defaults to jnp.array(1.0).
-            cubic_coeff (Array, optional): Coefficient for cubic term. Defaults to jnp.array(2.0).
-            coupling_coeff (Array, optional): Coefficient for coupling term. Defaults to
-                jnp.array(0.5).
+            lin_coeff (float, optional): Coefficient for linear term. Defaults to 1.0.
+            cubic_coeff (float, optional): Coefficient for cubic term. Defaults to 2.0.
+            coupling_coeff (float, optional): Coefficient for coupling term. Defaults to 0.5.
         """
 
-        self.A = lin_coeff
-        self.a = cubic_coeff
-        self.c = coupling_coeff
+        self.A = jnp.array(lin_coeff)
+        self.a = jnp.array(cubic_coeff)
+        self.c = jnp.array(coupling_coeff)
 
     def fn(self, t: Array, x: Array) -> Array:
         """

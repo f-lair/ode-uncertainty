@@ -7,22 +7,17 @@ from src.ode.ode import ODE
 class Logistic(ODE):
     """Logistic ODE (first-order)."""
 
-    def __init__(
-        self, growth_rate: Array = jnp.array(1.0), carrying_capacity: Array = jnp.array(1.0)
-    ) -> None:
+    def __init__(self, growth_rate: float = 1.0, carrying_capacity: float = 1.0) -> None:
         """
         Initialization for population-growth model.
-        ...: Batch dimension(s).
 
         Args:
-            growth_rate (Array, optional): Population growth rate [...]. Defaults to
-                jnp.array(1.0).
-            carrying_capacity (Array, optional): Maximum population size [...]. Defaults to
-                jnp.array(1.0).
+            growth_rate (float, optional): Population growth rate. Defaults to 1.0.
+            carrying_capacity (float, optional): Maximum population size. Defaults to 1.0.
         """
 
-        self.r = growth_rate
-        self.K = carrying_capacity
+        self.r = jnp.array(growth_rate)
+        self.K = jnp.array(carrying_capacity)
 
     def fn(self, t: Array, x: Array) -> Array:
         """

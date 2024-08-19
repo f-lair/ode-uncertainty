@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Dict, Tuple
 
 from jax import Array
 
@@ -9,15 +9,15 @@ from src.solvers.rksolver import RKSolver
 class Filter:
     """Abstract base class for Gaussian filters, used for ODE solving."""
 
-    def __init__(self, rk_solver: RKSolver, P0: Array, sigma_fn: SigmaFn) -> None:
+    def setup(self, rk_solver: RKSolver, P0: Array, sigma_fn: SigmaFn) -> None:
         """
-        Initializes filter.
+        Setups filter.
         D: Latent dimension.
         N: ODE order.
 
         Args:
             rk_solver (RKSolver): RK solver.
-            P0 (Array): Initial covariance [N*D, N*D].
+            P0 (Array): Initial covariance [1, N*D, N*D].
             sigma_fn (SigmaFn): Sigma function.
         """
 
@@ -27,7 +27,7 @@ class Filter:
         self._P = P0
         self.sigma_fn = sigma_fn
 
-    def predict(self) -> Tuple[Array, Array, Array]:
+    def _predict(self) -> Tuple[Array, ...]:
         """
         Predicts state after performing one step of the ODE solver.
         D: Latent dimension.
@@ -37,20 +37,55 @@ class Filter:
             NotImplementedError: Needs to be implemented for a concrete filter.
 
         Returns:
-            Tuple[Array, Array, Array]: Time [1], mean state [1, N, D], covariance [N*D, N*D].
+            Tuple[Array, ...]: Results data according to results_spec.
         """
 
         raise NotImplementedError
+
+    @staticmethod
+    def results_spec() -> Tuple[str, ...]:
+        """
+        Results specification.
+
+        Raises:
+            NotImplementedError: Needs to be implemented for a concrete filter.
+
+        Returns:
+            Tuple[str, ...]: Results keys.
+        """
+
+        raise NotImplementedError
+
+    def batch_dim(self) -> int:
+        """
+        Batch dimension.
+
+        Returns:
+            int: Batch dimension.
+        """
+
+        return 1
+
+    def predict(self) -> Dict[str, Array]:
+        """
+        Predicts state after performing one step of the ODE solver.
+
+        Returns:
+            Dict[str, Array]: Results according to results_spec.
+        """
+
+        return {key: datum for key, datum in zip(self.results_spec(), self._predict())}
 
     @property
     def P(self) -> Array:
         """
         Covariance getter.
+        M: Batch dimension.
         D: Latent dimension.
         N: ODE order.
 
         Returns:
-            Array: Covariance [N*D, N*D].
+            Array: Covariance [M, N*D, N*D].
         """
 
         return self._P
@@ -59,11 +94,12 @@ class Filter:
     def P(self, value: Array) -> None:
         """
         Covariance setter.
+        M: Batch dimension.
         D: Latent dimension.
         N: ODE order.
 
         Args:
-            value (Array): Covariance [N*D, N*D].
+            value (Array): Covariance [M, N*D, N*D].
         """
 
         self._P = value

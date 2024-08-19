@@ -61,9 +61,7 @@ def test_rkf45_rlc_circuit_1():
     dt = 0.01
     x0 = [[10.0], [0.0]]
 
-    ode = RLCCircuit(
-        resistance=jnp.array(2500), inductance=jnp.array(400), capacitance=jnp.array(2.5e-5)
-    )
+    ode = RLCCircuit(resistance=2500, inductance=400, capacitance=2.5e-5)
     t = jnp.array(t0)
     x = jnp.array(x0)
     solver = RKF45(ode, t, x, jnp.array(dt))
@@ -86,9 +84,7 @@ def test_rkf45_rlc_circuit_1_auto_adaptive():
     tN = 1.0
     x0 = [[10.0], [0.0]]
 
-    ode = RLCCircuit(
-        resistance=jnp.array(2500), inductance=jnp.array(400), capacitance=jnp.array(2.5e-5)
-    )
+    ode = RLCCircuit(resistance=2500, inductance=400, capacitance=2.5e-5)
     t = jnp.array(t0)
     x = jnp.array(x0)
     solver = RKF45(ode, t, x, adaptive_control=True)
@@ -114,9 +110,7 @@ def test_rkf45_rlc_circuit_2():
     dt = 0.01
     x0 = [[10.0], [0.0]]
 
-    ode = RLCCircuit(
-        resistance=jnp.array(4000), inductance=jnp.array(160), capacitance=jnp.array(4e-5)
-    )
+    ode = RLCCircuit(resistance=4000, inductance=160, capacitance=4e-5)
     t = jnp.array(t0)
     x = jnp.array(x0)
     solver = RKF45(ode, t, x, jnp.array(dt))
@@ -139,9 +133,7 @@ def test_rkf45_rlc_circuit_2_auto_adaptive():
     tN = 1.0
     x0 = [[10.0], [0.0]]
 
-    ode = RLCCircuit(
-        resistance=jnp.array(4000), inductance=jnp.array(160), capacitance=jnp.array(4e-5)
-    )
+    ode = RLCCircuit(resistance=4000, inductance=160, capacitance=4e-5)
     t = jnp.array(t0)
     x = jnp.array(x0)
     solver = RKF45(ode, t, x, adaptive_control=True)
@@ -167,9 +159,7 @@ def test_rkf45_rlc_circuit_3():
     dt = 0.01
     x0 = [[10.0], [0.0]]
 
-    ode = RLCCircuit(
-        resistance=jnp.array(5000), inductance=jnp.array(160), capacitance=jnp.array(4e-5)
-    )
+    ode = RLCCircuit(resistance=5000, inductance=160, capacitance=4e-5)
     t = jnp.array(t0)
     x = jnp.array(x0)
     solver = RKF45(ode, t, x, jnp.array(dt))
@@ -192,9 +182,7 @@ def test_rkf45_rlc_circuit_3_auto_adaptive():
     tN = 1.0
     x0 = [[10.0], [0.0]]
 
-    ode = RLCCircuit(
-        resistance=jnp.array(5000), inductance=jnp.array(160), capacitance=jnp.array(4e-5)
-    )
+    ode = RLCCircuit(resistance=5000, inductance=160, capacitance=4e-5)
     t = jnp.array(t0)
     x = jnp.array(x0)
     solver = RKF45(ode, t, x, adaptive_control=True)

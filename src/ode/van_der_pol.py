@@ -7,17 +7,15 @@ from src.ode.ode import ODE
 class VanDerPol(ODE):
     """Van der Pol ODE (second-order)."""
 
-    def __init__(self, damping: Array = jnp.array(1.0)) -> None:
+    def __init__(self, damping: float = 5.0) -> None:
         """
         Initialization for Van der Pol oscillator.
-        ...: Batch dimension(s).
 
         Args:
-            damping (Array, optional): Nonlinearity and strength of the damping [...]. Defaults to
-                jnp.array(1.0).
+            damping (float, optional): Nonlinearity and strength of the damping. Defaults to 5.0.
         """
 
-        self.mu = damping
+        self.mu = jnp.array(damping)
 
     def fn(self, t: Array, x: Array) -> Array:
         """

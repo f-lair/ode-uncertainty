@@ -9,23 +9,23 @@ class Lorenz(ODE):
 
     def __init__(
         self,
-        sigma: Array = jnp.array(10.0),
-        beta: Array = jnp.array(8.0 / 3),
-        rho: Array = jnp.array(28.0),
+        sigma: float = 10.0,
+        beta: float = 8.0 / 3,
+        rho: float = 28.0,
     ) -> None:
         """
         Initialization for Lorenz system.
-        ...: Batch dimension(s).
 
         Args:
-            sigma (Array, optional): Parameter proportional to Prandtl number. Defaults to jnp.array(10.0).
-            beta (Array, optional): Parameter proportional to Rayleigh number. Defaults to jnp.array(8./3).
-            rho (Array, optional): Parameter proportional to certain physical dimensions of the layer itself. Defaults to jnp.array(28.).
+            sigma (float, optional): Parameter proportional to Prandtl number. Defaults to 10.0.
+            beta (float, optional): Parameter proportional to Rayleigh number. Defaults to 8.0 / 3.
+            rho (float, optional): Parameter proportional to certain physical dimensions of the
+                layer itself. Defaults to 28.0.
         """
 
-        self.sigma = sigma
-        self.beta = beta
-        self.rho = rho
+        self.sigma = jnp.array(sigma)
+        self.beta = jnp.array(beta)
+        self.rho = jnp.array(rho)
 
     def fn(self, t: Array, x: Array) -> Array:
         """

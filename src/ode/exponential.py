@@ -7,17 +7,15 @@ from src.ode.ode import ODE
 class Exponential(ODE):
     """Exponential ODE (first-order)."""
 
-    def __init__(self, growth_factor: Array = jnp.array(1.0)) -> None:
+    def __init__(self, growth_factor: float = 1.0) -> None:
         """
         Initialization for exponential growth/decay model.
-        ...: Batch dimension(s).
 
         Args:
-            growth_factor (Array, optional): Growth factor [...]. Defaults to
-                jnp.array(1.0).
+            growth_factor (float, optional): Growth factor. Defaults to 1.0.
         """
 
-        self.a = growth_factor
+        self.a = jnp.array(growth_factor)
 
     def fn(self, t: Array, x: Array) -> Array:
         """

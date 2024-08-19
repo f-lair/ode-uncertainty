@@ -4,4 +4,6 @@
 *.h5
 *.ps1
 TODO.md
-notebooks/*.pdf
+configs/
+notebooks/
+animations/

@@ -1,7 +1,7 @@
-import ast
 import sys
-from argparse import ArgumentParser
-from typing import Tuple
+from ast import literal_eval
+from pathlib import Path
+from typing import Tuple, Type
 
 sys.path.append("../")
 
@@ -9,142 +9,113 @@ import h5py
 from jax import Array
 from jax import numpy as jnp
 from jax import random
+from jsonargparse import CLI
 from tqdm import tqdm
 
-from src.ode import Lorenz, VanDerPol
-from src.solvers import RKF45
+from src.ode import *
+from src.ode.ode import ODE
+from src.solvers import *
 from src.solvers.rksolver import RKSolver
 
 
-def main() -> None:
-    parser = ArgumentParser(
-        "ODE Solver Script",
-        description="Runs embedded RK ODE solver.\nN: ODE order\nD: Latent dimension",
-    )
-    parser.add_argument(
-        "--solver",
-        type=str,
-        default="RKF45",
-        help="Embedded RK solver: RKF45 (default).",
-        choices=["RKF45"],
-    )
-    parser.add_argument(
-        "--ode",
-        type=str,
-        default="Lorenz",
-        help="ODE: Lorenz (default), VanDerPol.",
-        choices=["Lorenz", "VanDerPol"],
-    )
-    parser.add_argument("--x0", type=str, required=True, help="Initial value [N, D].")
-    parser.add_argument("--t0", type=float, required=True, help="Initial time.")
-    parser.add_argument("--tN", type=float, required=True, help="Final time.")
-    parser.add_argument("--dt", type=float, help="Final time.")
-    parser.add_argument(
-        "--eps-perturbations",
-        type=int,
-        default=0,
-        help="Number of perturbed sample paths computed using local truncation error.",
-    )
-    parser.add_argument(
-        "--eps-perturbation-mode",
-        type=str,
-        default="Diagonal",
-        help="Mode used for eps-based perturbations: Diagonal (default), Outer.",
-        choices=["Diagonal", "Outer"],
-    )
-    parser.add_argument(
-        "--const-perturbations",
-        type=int,
-        default=0,
-        help="Number of perturbed sample paths computed using constant.",
-    )
-    parser.add_argument(
-        "--const-perturbation-val",
-        default=0.1,
-        type=float,
-        help="Constant used for perturbations.",
-    )
-    parser.add_argument(
-        "--seed",
-        type=int,
-        default=7,
-        help="Seed used for random perturbations.",
-    )
-    parser.add_argument(
-        '--adaptive', action="store_true", help="Activates adaptive step size control."
-    )
-    parser.add_argument(
-        "--rtol",
-        type=float,
-        default=1e-6,
-        help="Relative tolerance for adaptive step size control.",
-    )
-    parser.add_argument(
-        "--atol",
-        type=float,
-        default=1e-8,
-        help="Absolute tolerance for adaptive step size control.",
-    )
-    parser.add_argument(
-        "--save-interval", type=int, default=1, help="Interval in which solutions are saved."
-    )
-    parser.add_argument("-o", "--output", type=str, required=True, help="Output filepath (.h5).")
-    parser.add_argument('--disable-pbar', action="store_true", help="Deactivates progress bar.")
-    args = parser.parse_args()
+def main(
+    output: str,
+    solver_cls: Type[RKSolver] = RKF45,
+    ode: ODE = LotkaVolterra(),
+    x0: str = "[[1.0, 1.0]]",
+    t0: float = 0.0,
+    tN: float = 80.0,
+    dt: float = 0.1,
+    eps_perturbations: int = 0,
+    eps_perturbations_mode: str = "Diagonal",
+    const_perturbations: int = 0,
+    const_perturbations_val: float = 0.1,
+    seed: int = 7,
+    adaptive: bool = False,
+    rtol: float = 1e-6,
+    atol: float = 1e-8,
+    save_interval: int = 1,
+    disable_pbar: bool = False,
+) -> None:
+    """
+    Runs ODE solver.
+    D: Latent dimension.
+    N: ODE order.
 
-    match args.solver:
-        case "RKF45":
-            solver_cls = RKF45
-        case _:
-            raise ValueError(f"Unknown solver: {args.solver}")
+    Args:
+        output (str): Path to H5 results file.
+        solver_cls (Type[RKSolver], optional): ODE solver class. Defaults to RKF45.
+        ode (ODE, optional): ODE. Defaults to LotkaVolterra().
+        x0 (str, optional): Initial value [N, D]. Defaults to "[[1.0, 1.0]]".
+        t0 (float, optional): Start time. Defaults to 0.0.
+        tN (float, optional): End time. Defaults to 80.0.
+        dt (float, optional): Step size. Defaults to 0.1.
+        eps_perturbations (int, optional): Number of perturbed sample paths computed using local
+            truncation error. Defaults to 0.
+        eps_perturbations_mode (str, optional): Mode used for eps-based perturbations: Diagonal,
+            Outer. Defaults to "Diagonal".
+        const_perturbations (int, optional): Number of perturbed sample paths computed using
+            constant. Defaults to 0.
+        const_perturbations_val (float, optional): Constant used for perturbations. Defaults to
+            0.1.
+        seed (int, optional): Seed used for random perturbations. Defaults to 7.
+        adaptive (bool, optional): Activates adaptive step size control. Defaults to False.
+        rtol (float, optional): Relative tolerance for adaptive step size control. Defaults to
+            1e-6.
+        atol (float, optional): Absolute tolerance for adaptive step size control. Defaults to
+            1e-8.
+        save_interval (int, optional): Timestep interval in which results are saved. Defaults to 1.
+        disable_pbar (bool, optional): Disables progress bar. Defaults to False.
+    """
 
-    match args.ode:
-        case "Lorenz":
-            ode = Lorenz()
-        case "VanDerPol":
-            ode = VanDerPol(jnp.array(5))
-        case _:
-            raise ValueError(f"Unknown ODE: {args.ode}")
+    x0_arr = jnp.array([literal_eval(x0)])
+    t0_arr = jnp.array([t0])
+    tN_arr = jnp.array(tN)
+    dt_arr = jnp.array(dt)
 
-    x0 = jnp.array([ast.literal_eval(args.x0)])
-    t0 = jnp.array([args.t0])
-    tN = jnp.array(args.tN)
-    dt = jnp.array(args.dt) if args.dt is not None else None
-    prng_key = random.key(args.seed)
-    n_eps_p = args.eps_perturbations
-    eps_p_mode = args.eps_perturbation_mode
-    n_const_p = args.const_perturbations
-    const_p_val = args.const_perturbation_val
-    adaptive = args.adaptive
-    rtol = args.rtol
-    atol = args.atol
-    save_interval = args.save_interval
-    out_filepath = args.output
-    disable_pbar = args.disable_pbar
+    prng_key = random.key(seed)
+    solver = solver_cls(ode, t0_arr, x0_arr, dt_arr, adaptive, rtol=rtol, atol=atol)
 
-    solver = solver_cls(ode, t0, x0, dt, adaptive, rtol=rtol, atol=atol)
     ts, xs, xs_eps_p, xs_const_p, epss, epss_eps_p, epss_const_p = unroll(
         solver,
-        tN,
+        tN_arr,
         prng_key,
-        n_eps_p,
-        eps_p_mode,
-        n_const_p,
-        const_p_val,
+        eps_perturbations,
+        eps_perturbations_mode,
+        const_perturbations,
+        const_perturbations_val,
         save_interval,
         disable_pbar,
     )
-    store(ts, xs, xs_eps_p, xs_const_p, epss, epss_eps_p, epss_const_p, out_filepath)
+    store(ts, xs, xs_eps_p, xs_const_p, epss, epss_eps_p, epss_const_p, output)
 
 
 def draw_eps_perturbations(eps: Array, prng_key: Array, eps_p_mode: str) -> Array:
+    """
+    Draws random perturbations based on local truncation error.
+    ...: Batch dimension.
+    D: Latent dimension.
+    N: ODE order.
+
+    Args:
+        eps (Array): Local truncation error [..., N, D].
+        prng_key (Array): PRNG key.
+        eps_p_mode (str): Mode used for eps-based perturbations.
+
+    Raises:
+        ValueError: Unknown perturbation mode.
+
+    Returns:
+        Array: Random perturbations [..., N, D].
+    """
+
     match eps_p_mode:
         case "Diagonal":
             return eps * random.normal(prng_key, shape=eps.shape)
         case "Outer":
-            eps_f = jnp.reshape(eps, eps.shape[:-2] + (-1,))
+            eps_sqrt = jnp.sqrt(jnp.reshape(eps, eps.shape[:-2] + (-1,)))
             mean = jnp.zeros(eps.shape[:-2] + (eps.shape[-2] * eps.shape[-1],))
-            cov = jnp.einsum("...i, ...j -> ...ij", eps_f, eps_f)
+            cov = jnp.einsum("...i, ...j -> ...ij", eps_sqrt, eps_sqrt)
 
             out = random.multivariate_normal(prng_key, mean, cov, method="svd").reshape(*eps.shape)
             return out
@@ -163,6 +134,35 @@ def unroll(
     save_interval: int,
     disable_pbar: bool,
 ) -> Tuple[Array, Array, Array | None, Array | None, Array, Array | None, Array | None]:
+    """
+    Unrolls trajectory.
+    D: Latent dimension.
+    N: ODE order.
+    P: Perturbation dimension.
+    T: Time dimension.
+
+    Args:
+        solver (RKSolver): ODE solver.
+        tN (Array): End time.
+        prng_key (Array): PRNG key.
+        n_eps_p (int): Number of perturbed sample paths computed using local truncation error.
+        eps_p_mode (str): Mode used for eps-based perturbations.
+        n_const_p (int): Number of perturbed sample paths computed using constant.
+        const_p_val (float): Constant used for perturbations.
+        save_interval (int): Timestep interval in which results are saved.
+        disable_pbar (bool): Disables progress bar.
+
+    Returns:
+        Tuple[Array, Array, Array | None, Array | None, Array, Array | None, Array | None]:
+            Time [T],
+            State [T, N, D],
+            Eps-perturbed state [T, P, N, D],
+            Const-perturbed state [T, P, N, D],
+            Eps [T, N, D],
+            Eps (eps-perturbed) [T, P, N, D],
+            Eps (const-perturbed) [T, P, N, D].
+    """
+
     ts = [solver.t0[0]]
     xs = [solver.x0[0]]
     if n_eps_p > 0:
@@ -176,10 +176,14 @@ def unroll(
     counter = 0
     t = solver.t0
     x = solver.x0
+    h = solver.h
     pbar = tqdm(total=tN.item(), disable=disable_pbar, unit="sec")
 
     while jnp.any(t < tN):
-        t, x, eps, _ = solver.step(t, x)  # [P, N, D]
+        if solver.adaptive_control:
+            t, x, eps, h = solver.step(t, x, h)  # [P, N, D]
+        else:
+            t, x, eps, _ = solver.step(t, x)  # [P, N, D]
         prng_key, subkey_1 = random.split(prng_key)
         prng_key, subkey_2 = random.split(prng_key)
         p = jnp.concatenate(
@@ -236,6 +240,25 @@ def store(
     epss_const_p: Array | None,
     out_filepath: str,
 ) -> None:
+    """
+    Saves results on disk.
+    D: Latent dimension.
+    N: ODE order.
+    P: Perturbation dimension.
+    T: Time dimension.
+
+    Args:
+        ts (Array): Time [T].
+        xs (Array): State [T, N, D].
+        xs_eps_p (Array | None): Eps-perturbed state [T, P, N, D].
+        xs_const_p (Array | None): Const-perturbed state [T, P, N, D].
+        epss (Array): Eps (unperturbed state) [T, N, D].
+        epss_eps_p (Array | None): Eps (eps-perturbed states) [T, P, N, D].
+        epss_const_p (Array | None): Eps (const-perturbed states) [T, P, N, D].
+        out_filepath (str): Path to H5 results file.
+    """
+
+    Path(out_filepath).parent.mkdir(parents=True, exist_ok=True)
     h5f = h5py.File(out_filepath, "w")
     h5f.create_dataset("ts", data=ts)
     h5f.create_dataset("xs", data=xs)
@@ -252,4 +275,4 @@ def store(
 
 
 if __name__ == "__main__":
-    main()
+    CLI(main, as_positional=False)
