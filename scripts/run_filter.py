@@ -13,6 +13,7 @@ from tqdm import tqdm
 
 from src.filters import *
 from src.filters.filter import Filter
+from src.filters.perturbation_fns import *
 from src.filters.sigma_fns import *
 from src.ode import *
 from src.ode.ode import ODE
@@ -25,6 +26,7 @@ def main(
     filter_: Filter = EKF(),
     solver_cls: Type[RKSolver] = RKF45,
     ode: ODE = LotkaVolterra(),
+    perturbation_fn: PerturbationFn = Gaussian(),
     sigma_fn: SigmaFn = DiagonalSigma(),
     x0: str = "[[1.0, 1.0]]",
     P0: str | None = None,
@@ -65,7 +67,10 @@ def main(
     dt_arr = jnp.array([dt])
 
     solver = solver_cls(ode, t0_arr, x0_arr, dt_arr)
-    filter_.setup(solver, P0_arr, sigma_fn)
+    if isinstance(filter_, ParticleFilter):
+        filter_.setup(solver, P0_arr, perturbation_fn, sigma_fn)
+    else:
+        filter_.setup(solver, P0_arr, sigma_fn)
 
     results = unroll(
         filter_,
