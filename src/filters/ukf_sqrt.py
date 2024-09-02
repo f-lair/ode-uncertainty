@@ -10,6 +10,7 @@ from tensorflow_probability.substrates import jax as tfp
 from src.filters import UKF
 from src.filters.sigma_fns import SigmaFn
 from src.solvers.rksolver import RKSolver
+from src.utils import sqrt_L_sum_qr
 
 
 class UKF_SQRT(UKF):
@@ -35,6 +36,8 @@ class UKF_SQRT(UKF):
 
         super().__init__(alpha, beta, kappa, anomaly_detection)
 
+    def setup(self, rk_solver: RKSolver, P0: Array, sigma_fn: SigmaFn) -> None:
+        super().setup(rk_solver, P0, sigma_fn)
         self.S = jnp.nan_to_num(jsp.linalg.cholesky(self._P, lower=True))  # type: ignore
 
     @property
@@ -90,7 +93,7 @@ class UKF_SQRT(UKF):
 
         m_0 = m.ravel()[None, :]  # [1, N*D]
         m_1 = jnp.broadcast_to(m_0, S.shape[1:])  # [N*D, N*D]
-        m_2 = jnp.sqrt(n + lambda_) * S[0]  # [N*D, N*D]
+        m_2 = jnp.sqrt(n + lambda_) * S[0].T  # [N*D, N*D]
         q_0 = jnp.zeros_like(m_0)  # [1, N*D]
         q_1 = jnp.zeros_like(S[0])  # [N*D, N*D]
         q_2 = jnp.full_like(S[0], jnp.sqrt(n + lambda_))  # [N*D, N*D]
@@ -152,18 +155,23 @@ class UKF_SQRT(UKF):
         anomaly_flags.append(jnp.isinf(S_next).any())
         anomaly_flags.append(jnp.isnan(S_next).any())
 
-        S_next = tfp.math.cholesky_update(
-            S_next.T, x_m_next[0] - m_next, jnp.sign(w_c[0]) * jnp.sqrt(jnp.abs(w_c[0]))
+        chol_update_vec = x_m_next[0] - m_next
+        S_next = jnp.where(
+            jnp.all(chol_update_vec == 0.0),
+            S_next.T,
+            tfp.math.cholesky_update(
+                S_next.T, chol_update_vec, jnp.sign(w_c[0]) * jnp.sqrt(jnp.abs(w_c[0]))
+            ),
         )  # [N*D, N*D]
 
-        anomaly_flags.append(jnp.isinf(S_next).any())
-        anomaly_flags.append(jnp.isnan(S_next).any())
+        anomaly_flags.append(jnp.isinf(S_next).any())  # type: ignore
+        anomaly_flags.append(jnp.isnan(S_next).any())  # type: ignore
 
         return (
             t_next[0:1],
             m_next[None, :].reshape(*m.shape),
             x_m_next.reshape(-1, *m.shape[1:]),
-            S_next[None, :, :],
+            S_next[None, :, :],  # type: ignore
             jnp.stack(anomaly_flags),
         )
 

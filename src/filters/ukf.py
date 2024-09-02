@@ -113,8 +113,8 @@ class UKF(Filter):
         )[
             None, :
         ]  # [1, 2*N*D]
-        m_1 = m_0 + jnp.sqrt(n + lambda_) * S  # [2*N*D, 2*N*D]
-        m_2 = m_0 - jnp.sqrt(n + lambda_) * S  # [2*N*D, 2*N*D]
+        m_1 = m_0 + jnp.sqrt(n + lambda_) * S.T  # [2*N*D, 2*N*D]
+        m_2 = m_0 - jnp.sqrt(n + lambda_) * S.T  # [2*N*D, 2*N*D]
 
         x_m = jnp.concatenate(
             [m_0, m_1, m_2],
