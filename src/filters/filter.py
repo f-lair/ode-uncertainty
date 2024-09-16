@@ -1,105 +1,103 @@
-from typing import Dict, Tuple
+from functools import partial
+from typing import Callable, Dict, Tuple
 
 from jax import Array
+from jax.tree_util import Partial
 
-from src.filters.sigma_fns import SigmaFn
-from src.solvers.rksolver import RKSolver
+from src.covariance_functions import DiagonalCovariance
+from src.covariance_functions.covariance_function import (
+    CovarianceFunction,
+    CovarianceFunctionBuilder,
+)
+from src.ode.ode import ODE
+from src.solvers.solver import ParametrizedSolver, Solver
+
+# FilterPredict::(Solver:solver, CovarianceFunction:cov_fn, Dict[str, Array]:state) ->
+# (Dict[str, Array]:next_state)
+FilterPredict = Callable[[Solver, CovarianceFunction, Dict[str, Array]], Dict[str, Array]]
+# ParametrizedFilterPredict::(Solver:solver, CovarianceFunction:cov_fn, ODE:ode,
+# Dict[str,Array]:params, Dict[str, Array]:state) -> (Dict[str, Array]:next_state)
+ParametrizedFilterPredict = Callable[
+    [ParametrizedSolver, CovarianceFunction, ODE, Dict[str, Array], Dict[str, Array]],
+    Dict[str, Array],
+]
+# FilterCorrect::(Callable[[Array], Array]:measurement_fn, Dict[str, Array]:state) ->
+# (Dict[str, Array]:next_state)
+FilterCorrect = Callable[[Callable[[Array], Array], Dict[str, Array]], Dict[str, Array]]
 
 
-class Filter:
-    """Abstract base class for Gaussian filters, used for ODE solving."""
+class FilterBuilder:
+    """Abstract builder base class for filters, used for ODE solving."""
 
-    def setup(self, rk_solver: RKSolver, P0: Array, sigma_fn: SigmaFn) -> None:
+    def __init__(self, cov_fn_builder: CovarianceFunctionBuilder = DiagonalCovariance()) -> None:
+        self.cov_fn_builder = cov_fn_builder
+
+    def state_def(self, N: int, D: int, L: int) -> Dict[str, Tuple[int, ...]]:
         """
-        Setups filter.
-        D: Latent dimension.
-        N: ODE order.
+        Defines the solver state.
 
         Args:
-            rk_solver (RKSolver): RK solver.
-            P0 (Array): Initial covariance [1, N*D, N*D].
-            sigma_fn (SigmaFn): Sigma function.
+            N (int): ODE order.
+            D (int): Latent dimension.
+            L (int): Measurement dimension.
+
+        Raises:
+            NotImplementedError: Needs to be defined for a concrete filter.
+
+        Returns:
+            Dict[str, Tuple[int, ...]]: State definition.
         """
 
-        self.rk_solver = rk_solver
-        self.t = rk_solver.t0
-        self.m = rk_solver.x0
-        self._P = P0
-        self.sigma_fn = sigma_fn
+        raise NotImplementedError
 
-    def _predict(self) -> Tuple[Array, ...]:
+    def build_cov_fn(self) -> CovarianceFunction:
         """
-        Predicts state after performing one step of the ODE solver.
-        D: Latent dimension.
-        N: ODE order.
+        Builds covariance function.
 
         Raises:
             NotImplementedError: Needs to be implemented for a concrete filter.
 
         Returns:
-            Tuple[Array, ...]: Results data according to results_spec.
+            CovarianceFunction: Covariance function.
         """
 
         raise NotImplementedError
 
-    @staticmethod
-    def results_spec() -> Tuple[str, ...]:
+    def build_predict(self) -> FilterPredict:
         """
-        Results specification.
+        Builds filter's predict function.
 
         Raises:
             NotImplementedError: Needs to be implemented for a concrete filter.
 
         Returns:
-            Tuple[str, ...]: Results keys.
+            FilterPredict: Predict function.
         """
 
         raise NotImplementedError
 
-    def batch_dim(self) -> int:
+    def build_parametrized_predict(self) -> ParametrizedFilterPredict:
+        def parametrized_predict(
+            solver: ParametrizedSolver,
+            cov_fn: CovarianceFunction,
+            ode: ODE,
+            params: Dict[str, Array],
+            state: Dict[str, Array],
+        ) -> Dict[str, Array]:
+            predict = self.build_predict()
+            return predict(partial(solver, ode, params), cov_fn, state)
+
+        return parametrized_predict
+
+    def build_correct(self) -> FilterCorrect:
         """
-        Batch dimension.
+        Builds filter's correct function.
+
+        Raises:
+            NotImplementedError: Needs to be implemented for a concrete filter.
 
         Returns:
-            int: Batch dimension.
+            FilterCorrect: Correct function.
         """
 
-        return 1
-
-    def predict(self) -> Dict[str, Array]:
-        """
-        Predicts state after performing one step of the ODE solver.
-
-        Returns:
-            Dict[str, Array]: Results according to results_spec.
-        """
-
-        return {key: datum for key, datum in zip(self.results_spec(), self._predict())}
-
-    @property
-    def P(self) -> Array:
-        """
-        Covariance getter.
-        M: Batch dimension.
-        D: Latent dimension.
-        N: ODE order.
-
-        Returns:
-            Array: Covariance [M, N*D, N*D].
-        """
-
-        return self._P
-
-    @P.setter
-    def P(self, value: Array) -> None:
-        """
-        Covariance setter.
-        M: Batch dimension.
-        D: Latent dimension.
-        N: ODE order.
-
-        Args:
-            value (Array): Covariance [M, N*D, N*D].
-        """
-
-        self._P = value
+        raise NotImplementedError

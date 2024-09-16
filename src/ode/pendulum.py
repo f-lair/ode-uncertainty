@@ -6,18 +6,18 @@ from jax import numpy as jnp
 from src.ode.ode import ODE, ODEBuilder
 
 
-class VanDerPol(ODEBuilder):
-    """Van der Pol ODE (second-order)."""
+class Pendulum(ODEBuilder):
+    """Pendulum ODE (second-order)."""
 
-    def __init__(self, damping: float = 5.0) -> None:
+    def __init__(self, length: float = 3.0) -> None:
         """
-        Initialization for Van der Pol oscillator.
+        Initialization for pendulum.
 
         Args:
-            damping (float, optional): Nonlinearity and strength of the damping. Defaults to 5.0.
+            length (float, optional): Pendulum length in m. Defaults to 3.0.
         """
 
-        super().__init__(damping=damping)
+        super().__init__(length=length)
 
     def build(self) -> ODE:
         def ode(t: Array, x: Array, params: Dict[str, Array]) -> Array:
@@ -39,7 +39,7 @@ class VanDerPol(ODEBuilder):
             dx_dt_prev = x[1]  # [D]
 
             dx_dt_next = dx_dt_prev  # [D]
-            d2x_dt2_next = params["damping"] * (1 - x_prev**2) * dx_dt_prev - x_prev  # [D]
+            d2x_dt2_next = -9.81 / params["length"] * jnp.sin(x_prev)  # [D]
 
             return jnp.stack([dx_dt_next, d2x_dt2_next], axis=-2)  # [N, D]
 

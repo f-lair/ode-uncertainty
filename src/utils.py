@@ -1,7 +1,147 @@
+from pathlib import Path
+from typing import Any, Callable, Dict, Tuple
+
+import h5py
 import jax
 from jax import Array
 from jax import numpy as jnp
 from jax import scipy as jsp
+from jax.flatten_util import ravel_pytree
+
+
+def const_diag(n: int, val: float) -> Array:
+    return jnp.diag(jnp.full(n, val))
+
+
+def value_and_jacfwd(f: Callable, *args, argnum: int = 0) -> Tuple[Any, Any]:
+    """
+    Evaluates function and its Jacobian.
+
+    Args:
+        f (Callable): Function.
+        argnum (int, optional): Which argument to differentiate against. Defaults to 0.
+
+    Returns:
+        Tuple[Any, Any]: Function value, Jacobian.
+    """
+
+    val = f(*args)
+    jac = jax.jacfwd(f, argnums=argnum)(*args)
+
+    return val, jac
+
+
+def store_data(data: Dict[str, Array], out_filepath: str, mode="w") -> None:
+    """
+    Saves data in a H5 file.
+
+    Args:
+        data (Dict[str, Array]): Data to be saved.
+        out_filepath (str): Path to H5 results file.
+    """
+
+    Path(out_filepath).parent.mkdir(parents=True, exist_ok=True)
+    with h5py.File(out_filepath, mode) as h5f:
+        for k, v in data.items():
+            h5f.create_dataset(k, data=v)
+
+
+def negative_log_gaussian(x: Array, m: Array, P: Array) -> Array:
+    n = m.shape[-1]
+    P_cho = jnp.linalg.cholesky(P + const_diag(P.shape[-1], 1e-8))
+    y = jsp.linalg.solve_triangular(P_cho, x - m, lower=True)  # type: ignore
+    return (
+        1 / 2 * jnp.einsum('...i,...i->...', y, y)
+        + n / 2 * jnp.log(2 * jnp.pi)
+        + jnp.log(jnp.abs(P_cho.diagonal(axis1=-1, axis2=-2) + 1e-8)).sum(-1)  # type: ignore
+    )
+
+
+def normalize(
+    values: Dict[str, Array] | Array,
+    mins: Dict[str, Array] | Array,
+    maxs: Dict[str, Array] | Array,
+) -> Dict[str, Array] | Array:
+    """
+    Normalizes values to [0, 1] ranges, according to min-max values.
+
+    Args:
+        values (Dict[str, Array] | Array): Values to be normalized.
+        mins (Dict[str, Array] | Array): Minimum values.
+        maxs (Dict[str, Array] | Array): Maximum values.
+
+    Returns:
+        Dict[str, Array] | Array: Normalized values.
+    """
+
+    values_flat, unravel_fn = ravel_pytree(values)
+    mins_flat, _ = ravel_pytree(mins)
+    maxs_flat, _ = ravel_pytree(maxs)
+
+    out_flat = (values_flat - mins_flat) / (maxs_flat - mins_flat)
+    return unravel_fn(out_flat)
+
+
+def inv_normalize(
+    values: Dict[str, Array] | Array,
+    mins: Dict[str, Array] | Array,
+    maxs: Dict[str, Array] | Array,
+) -> Dict[str, Array] | Array:
+    """
+    Inverts normalization of values to [0, 1] ranges, according to min-max values.
+
+    Args:
+        values (Dict[str, Array] | Array): Normalized values.
+        mins (Dict[str, Array] | Array): Minimum values.
+        maxs (Dict[str, Array] | Array): Maximum values.
+
+    Returns:
+        Dict[str, Array] | Array: Unnormalized values.
+    """
+
+    values_flat, unravel_fn = ravel_pytree(values)
+    mins_flat, _ = ravel_pytree(mins)
+    maxs_flat, _ = ravel_pytree(maxs)
+
+    out_flat = values_flat * (maxs_flat - mins_flat) + mins_flat
+    return unravel_fn(out_flat)
+
+
+def sync_times(ts_x: Array, ts_y: Array) -> Tuple[Array, Array]:
+    x_indices = jnp.nonzero(isin_tolerance(ts_x, ts_y, 1e-8))[0]
+    y_indices = jnp.nonzero(isin_tolerance(ts_y, ts_x[x_indices], 1e-8))[0]
+    assert len(x_indices) == len(y_indices), f"{len(x_indices)} != {len(y_indices)}"
+
+    return x_indices, y_indices
+
+
+def isin_tolerance(elements: Array, test_elements: Array, tol: float) -> Array:
+    """
+    Implementation of jnp.isin for floating point arrays with tolerance.
+    Assumes arrays to be sorted.
+    cf. https://stackoverflow.com/a/51747164
+
+    Args:
+        elements (Array): Elements to be checked [N].
+        test_elements (Array): Elements to be checked against [M].
+        tol (float): Tolerance.
+
+    Returns:
+        Array: Boolean mask of elements being found in test_elements [N].
+    """
+
+    idx = jnp.searchsorted(test_elements, elements)
+
+    linvalid_mask = idx == len(test_elements)
+    idx = jnp.where(linvalid_mask, len(test_elements) - 1, idx)
+    lval = test_elements[idx] - elements
+    lval = jnp.where(linvalid_mask, -lval, lval)
+
+    rinvalid_mask = idx == 0
+    idx1 = jnp.where(rinvalid_mask, 0, idx - 1)
+    rval = elements - test_elements[idx1]
+    rval = jnp.where(rinvalid_mask, -rval, rval)
+    return jnp.minimum(lval, rval) <= tol
 
 
 @jax.jit

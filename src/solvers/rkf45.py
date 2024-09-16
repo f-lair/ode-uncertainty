@@ -1,14 +1,14 @@
 from jax import Array
 from jax import numpy as jnp
 
-from src.solvers.rksolver import RKSolver
+from src.solvers.rksolver import RKSolverBuilder
 
 
-class RKF45(RKSolver):
+class RKF45(RKSolverBuilder):
     """Runge-Kutta-Fehlberg solver (stage S=6, order p=4(5))."""
 
-    @staticmethod
-    def _A() -> Array:
+    @classmethod
+    def build_A(cls) -> Array:
         return jnp.array(
             [
                 [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -20,8 +20,8 @@ class RKF45(RKSolver):
             ]
         )
 
-    @staticmethod
-    def _b() -> Array:
+    @classmethod
+    def build_b(cls) -> Array:
         return jnp.array(
             [
                 [16 / 135, 0.0, 6656 / 12825, 28561 / 56430, -9 / 50, 2 / 55],
@@ -29,10 +29,6 @@ class RKF45(RKSolver):
             ]
         )
 
-    @staticmethod
-    def _c() -> Array:
+    @classmethod
+    def build_c(cls) -> Array:
         return jnp.array([0.0, 1 / 4, 3 / 8, 12 / 13, 1, 1 / 2])
-
-    @staticmethod
-    def _q() -> int:
-        return 4

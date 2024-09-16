@@ -634,7 +634,7 @@ class GMM_EKF(EKF):
         return self.t, self.m, self.P, dx_dts, self.w, self.M_valid
 
     @staticmethod
-    def results_spec() -> Tuple[str, ...]:
+    def results_spec_predict() -> Tuple[str, ...]:
         """
         Results specification.
 

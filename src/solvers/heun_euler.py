@@ -1,14 +1,14 @@
 from jax import Array
 from jax import numpy as jnp
 
-from src.solvers.rksolver import RKSolver
+from src.solvers.rksolver import RKSolverBuilder
 
 
-class HeunEuler(RKSolver):
+class HeunEuler(RKSolverBuilder):
     """Heun-Euler solver (stage S=2, order p=1(2))."""
 
-    @staticmethod
-    def _A() -> Array:
+    @classmethod
+    def build_A(cls) -> Array:
         return jnp.array(
             [
                 [0.0, 0.0],
@@ -16,8 +16,8 @@ class HeunEuler(RKSolver):
             ]
         )
 
-    @staticmethod
-    def _b() -> Array:
+    @classmethod
+    def build_b(cls) -> Array:
         return jnp.array(
             [
                 [0.5, 0.5],
@@ -25,10 +25,6 @@ class HeunEuler(RKSolver):
             ]
         )
 
-    @staticmethod
-    def _c() -> Array:
+    @classmethod
+    def build_c(cls) -> Array:
         return jnp.array([0.0, 1.0])
-
-    @staticmethod
-    def _q() -> int:
-        return 1

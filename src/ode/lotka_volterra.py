@@ -1,11 +1,12 @@
-import numpy as np
+from typing import Dict
+
 from jax import Array
 from jax import numpy as jnp
 
-from src.ode.ode import ODE
+from src.ode.ode import ODE, ODEBuilder
 
 
-class LotkaVolterra(ODE):
+class LotkaVolterra(ODEBuilder):
     """Lotka-Volterra ODE (first-order)."""
 
     def __init__(
@@ -25,29 +26,29 @@ class LotkaVolterra(ODE):
             delta (float, optional): Coefficient delta. Defaults to 1.0.
         """
 
-        self.alpha = jnp.array(alpha)
-        self.beta = jnp.array(beta)
-        self.gamma = jnp.array(gamma)
-        self.delta = jnp.array(delta)
+        super().__init__(alpha=alpha, beta=beta, gamma=gamma, delta=delta)
 
-    def fn(self, t: Array, x: Array) -> Array:
-        """
-        RHS of ODE.
-        D=2: Latent dimension.
-        N=1: ODE order.
-        ...: Batch dimension(s).
+    def build(self) -> ODE:
+        def ode(t: Array, x: Array, params: Dict[str, Array]) -> Array:
+            """
+            RHS of ODE.
+            D=2: Latent dimension.
+            N=1: ODE order.
 
-        Args:
-            t (Array): Time [...].
-            x (Array): State [..., N, D].
+            Args:
+                t (Array): Time [].
+                x (Array): State [N, D].
+                params (Dict[str, Array]): Parameters.
 
-        Returns:
-            Array: d/dt State [..., N, D].
-        """
+            Returns:
+                Array: d/dt State [N, D].
+            """
 
-        dx_dt_next = [
-            self.alpha * x[..., :, 0] - self.beta * x[..., :, 0] * x[..., :, 1],
-            -self.gamma * x[..., :, 1] + self.delta * x[..., :, 0] * x[..., :, 1],
-        ]  # [..., N, D]
+            dx_dt_next = [
+                params["alpha"] * x[:, 0] - params["beta"] * x[:, 0] * x[:, 1],
+                -params["gamma"] * x[:, 1] + params["delta"] * x[:, 0] * x[:, 1],
+            ]  # [N, D]
 
-        return jnp.stack(dx_dt_next, axis=-1)  # [..., N, D]
+            return jnp.stack(dx_dt_next, axis=-1)  # [N, D]
+
+        return ode

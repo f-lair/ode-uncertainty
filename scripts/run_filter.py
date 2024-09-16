@@ -1,167 +1,164 @@
+import math
 import sys
 from ast import literal_eval
-from pathlib import Path
-from typing import Dict, Type
+from typing import Callable, Dict, Tuple
+
+import jax
 
 sys.path.append("../")
+jax.config.update("jax_enable_x64", True)
 
 import h5py
 from jax import Array, lax
 from jax import numpy as jnp
+from jax_tqdm import scan_tqdm
 from jsonargparse import CLI
-from tqdm import tqdm
 
+from src.covariance_functions import *
+from src.covariance_functions.covariance_function import CovarianceFunction
 from src.filters import *
-from src.filters.filter import Filter
-from src.filters.perturbation_fns import *
-from src.filters.sigma_fns import *
+from src.filters.filter import FilterBuilder, FilterCorrect, FilterPredict
 from src.ode import *
-from src.ode.ode import ODE
+from src.ode.ode import ODEBuilder
 from src.solvers import *
-from src.solvers.rksolver import RKSolver
+from src.solvers.solver import Solver, SolverBuilder
+from src.utils import const_diag, store_data, sync_times
 
 
 def main(
     output: str,
-    filter_: Filter = EKF(),
-    solver_cls: Type[RKSolver] = RKF45,
-    ode: ODE = LotkaVolterra(),
-    perturbation_fn: PerturbationFn = Gaussian(),
-    sigma_fn: SigmaFn = DiagonalSigma(),
+    filter_builder: FilterBuilder = EKF(),
+    solver_builder: SolverBuilder = Dopri65(),
+    ode_builder: ODEBuilder = LotkaVolterra(),
     x0: str = "[[1.0, 1.0]]",
     P0: str | None = None,
     t0: float = 0.0,
     tN: float = 80.0,
-    dt: float = 0.1,
+    y_path: str | None = None,
+    measurement_matrix: str | None = None,
+    obs_noise_var: float = 1e-3,
     save_interval: int = 1,
     disable_pbar: bool = False,
 ) -> None:
-    """
-    Runs filter-based ODE solver.
-    D: Latent dimension.
-    N: ODE order.
 
-    Args:
-        output (str): Path to H5 results file.
-        filter_ (Filter, optional): ODE filter. Defaults to EKF().
-        solver_cls (Type[RKSolver], optional): ODE solver class. Defaults to RKF45.
-        ode (ODE, optional): ODE. Defaults to LotkaVolterra().
-        sigma_fn (SigmaFn, optional): Sigma function. Defaults to DiagonalSigma().
-        x0 (str, optional): Initial value [N, D]. Defaults to "[[1.0, 1.0]]".
-        P0 (str | None, optional): Initial covariance [N*D, N*D]. Defaults to None.
-        t0 (float, optional): Start time. Defaults to 0.0.
-        tN (float, optional): End time. Defaults to 80.0.
-        dt (float, optional): Step size. Defaults to 0.1.
-        save_interval (int, optional): Timestep interval in which results are saved. Defaults to 1.
-        disable_pbar (bool, optional): Disables progress bar. Defaults to False.
-    """
-
-    x0_arr = jnp.array(literal_eval(x0))[None, :, :]
-    P0_arr = (
-        jnp.zeros((1, x0_arr.size, x0_arr.size))
-        if P0 is None
-        else jnp.array([literal_eval(P0)])[None, :, :]
-    )
     t0_arr = jnp.array([t0])
-    tN_arr = jnp.array([tN])
-    dt_arr = jnp.array([dt])
+    x0_arr = jnp.array([literal_eval(x0)])
+    P0_arr = (
+        jnp.zeros((1, x0_arr.size, x0_arr.size)) if P0 is None else jnp.array([literal_eval(P0)])
+    )
 
-    solver = solver_cls(ode, t0_arr, x0_arr, dt_arr)
-    if isinstance(filter_, ParticleFilter):
-        filter_.setup(solver, P0_arr, perturbation_fn, sigma_fn)
+    ode = ode_builder.build()
+    step_size = solver_builder.h
+    solver_builder.setup(ode, ode_builder.params)
+    solver = jax.vmap(solver_builder.build())
+    filter_predict = filter_builder.build_predict()
+    cov_fn = filter_builder.build_cov_fn()
+
+    num_steps = int(math.ceil((tN - t0) / step_size))
+
+    if y_path is not None and measurement_matrix is not None:
+        with h5py.File(y_path) as h5f:
+            ts_y = jnp.asarray(h5f["t"])
+            ts_x = jnp.arange(t0, tN + step_size, step_size)
+
+            x_indices, y_indices = sync_times(ts_x, ts_y)
+            x_flags = jnp.zeros(ts_x.shape, dtype=bool)
+            x_flags = x_flags.at[x_indices].set(True)
+            xy_index_map = jnp.zeros(ts_x.shape, dtype=int)
+            xy_index_map = xy_index_map.at[x_indices].set(y_indices)
+
+            ys = jnp.asarray(h5f["x"])[y_indices]
+
+        H = jnp.array(literal_eval(measurement_matrix))
+        L = H.shape[0]
+        assert H.shape[1] == P0_arr.shape[-1], "Invalid measurement matrix!"
+        measurement_fn = lambda x: H @ x
+        ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
+
+        filter_correct = filter_builder.build_correct()
     else:
-        filter_.setup(solver, P0_arr, sigma_fn)
+        print("Prediction only")
+        L = 0
+        x_flags = jnp.zeros(num_steps, dtype=bool)
+        xy_index_map = jnp.zeros(num_steps, dtype=int)
+        ys = jnp.zeros((1, L))
+        measurement_fn = lambda x: x
+        filter_correct = lambda _, x: x
 
-    results = unroll(
-        filter_,
-        tN_arr,
+    state_def = filter_builder.state_def(x0_arr.shape[-2], x0_arr.shape[-1], L)
+    initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
+    initial_state["t"] = jnp.broadcast_to(t0_arr, initial_state["t"].shape)
+    initial_state["x"] = jnp.broadcast_to(x0_arr, initial_state["x"].shape)
+    initial_state["P"] = jnp.broadcast_to(P0_arr, initial_state["P"].shape)
+    initial_state["R"] = const_diag(L, obs_noise_var)
+
+    traj_states = unroll(
+        filter_predict,
+        filter_correct,
+        solver,
+        cov_fn,
+        measurement_fn,
+        initial_state,
+        ys,
+        x_flags,
+        xy_index_map,
+        num_steps,
         save_interval,
         disable_pbar,
     )
-    store(results, output)
+
+    store_data(traj_states, output)
 
 
 def unroll(
-    filter_: Filter,
-    tN: Array,
+    filter_predict: FilterPredict,
+    filter_correct: FilterCorrect,
+    solver: Solver,
+    cov_fn: CovarianceFunction,
+    measurement_fn: Callable[[Array], Array],
+    initial_state: Dict[str, Array],
+    ys: Array,
+    correct_flags: Array,
+    index_map: Array,
+    num_steps: int,
     save_interval: int,
     disable_pbar: bool,
 ) -> Dict[str, Array]:
     """
     Unrolls trajectory.
-    D: Latent dimension.
-    N: ODE order.
-    T: Time dimension.
 
     Args:
-        filter_ (Filter): ODE filter.
-        tN (Array): End time.
-        save_interval (int): Timestep interval in which results are saved.
+        solver (Solver): ODE solver.
+        initial_state (Dict[str, Array]): Initial state.
+        num_steps (int): Number of steps.
+        save_interval (int): Interval in which results are saved.
         disable_pbar (bool): Disables progress bar.
 
     Returns:
-        Dict[str, Array]: Results according to filter's results_spec.
+        Dict[str, Array]: Trajectory states.
     """
 
-    results = {key: [] for key in filter_.results_spec()}
-    results["ts"].append(filter_.t)
-    results["xs"].append(
-        lax.pad(
-            filter_.m,
-            0.0,
-            [(0, filter_.batch_dim() - filter_.m.shape[0], 0), (0, 0, 0), (0, 0, 0)],
-        )
-    )
-    if "Ps" in results:
-        results["Ps"].append(
-            lax.pad(
-                filter_.P,
-                0.0,
-                [(0, filter_.batch_dim() - filter_.P.shape[0], 0), (0, 0, 0), (0, 0, 0)],
-            )
-        )
-    dx_dts = filter_.rk_solver.fn(filter_.t, filter_.m)
-    results["dx_dts"].append(
-        lax.pad(
-            dx_dts,
-            0.0,
-            [(0, filter_.batch_dim() - dx_dts.shape[0], 0), (0, 0, 0), (0, 0, 0)],
-        )
-    )
+    cond_true_correct = lambda state: filter_correct(measurement_fn, state)
+    cond_false_correct = lambda state: state
 
-    counter = 0
-    t = filter_.t
-    pbar = tqdm(total=tN.item(), disable=disable_pbar, unit="sec")
+    @scan_tqdm(num_steps, disable=disable_pbar)
+    def scan_wrapper(
+        state: Dict[str, Array], idx: Array
+    ) -> Tuple[Dict[str, Array], Dict[str, Array]]:
+        correct_flag = correct_flags[idx]
+        state["y"] = ys.at[index_map[idx]].get()
+        state = filter_predict(solver, cov_fn, state)
+        state = lax.cond(correct_flag, cond_true_correct, cond_false_correct, state)
 
-    while t < tN:
-        step_results = filter_.predict()
-        t = step_results["ts"]
+        return state, state
 
-        if counter % save_interval == 0:
-            for key in results.keys() & step_results.keys():
-                results[key].append(step_results[key])
-        counter += 1
-        pbar.update(t.item() - pbar.n)
+    _, traj_states = lax.scan(scan_wrapper, initial_state, jnp.arange(num_steps, dtype=int))
+    traj_states = {
+        k: jnp.concat([initial_state[k][None, ...], traj_states[k]])[::save_interval]
+        for k in traj_states
+    }
 
-    pbar.update(tN.item() - pbar.n)
-    pbar.close()
-
-    return {key: jnp.stack(data) for key, data in results.items()}
-
-
-def store(results: Dict[str, Array], out_filepath: str) -> None:
-    """
-    Stores results data in H5 file on disk.
-
-    Args:
-        results (Dict[str, Array]): Results.
-        out_filepath (str): Path to H5 results file.
-    """
-
-    Path(out_filepath).parent.mkdir(parents=True, exist_ok=True)
-    with h5py.File(out_filepath, "w") as h5f:
-        for key, data in results.items():
-            h5f.create_dataset(key, data=data)
+    return traj_states
 
 
 if __name__ == "__main__":

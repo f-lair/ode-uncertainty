@@ -41,38 +41,22 @@ class UKF(Filter):
         super().setup(rk_solver, P0, sigma_fn)
 
         self.kappa = 3.0 - P0.shape[-1] if self.kappa is None else self.kappa
-        self.n = 2 * P0.shape[-1]
-        self.lambda_ = self.alpha**2 * (self.n + self.kappa) - self.n
-
-        self.w_m = jnp.concatenate(
-            [
-                jnp.array([self.lambda_ / (self.n + self.lambda_)]),
-                jnp.full((2 * self.n,), 1 / (2 * (self.n + self.lambda_))),
-            ]
-        )  # [4*N*D+1]
-        self.w_c = jnp.concatenate(
-            [
-                jnp.array(
-                    [self.lambda_ / (self.n + self.lambda_) + (1 - self.alpha**2 + self.beta)]
-                ),
-                jnp.full((2 * self.n,), 1 / (2 * (self.n + self.lambda_))),
-            ]
-        )  # [4*N*D+1]
 
         self.sigma_sqrt_fn = jax.vmap(self.sigma_fn.sqrt)  # type: ignore
 
     @staticmethod
-    @partial(jax.jit, static_argnums=[0, 1])
+    @partial(jax.jit, static_argnums=[0, 1, 2, 3, 4])
     def _predict_jit(
-        step_fn: Callable[[Array, Array], Tuple[Array, Array, Array, Array]],
+        step_fn: Callable[[Array, Array, Array], Tuple[Array, Array, Array, Array]],
         sigma_sqrt_fn: Callable[[Array], Array],
+        alpha: float,
+        beta: float,
+        kappa: float,
         t: Array,
         m: Array,
         P: Array,
-        w_m: Array,
-        w_c: Array,
-        n: int,
-        lambda_: float,
+        gamma: Array,
+        ode_params: Array,
     ) -> Tuple[Array, Array, Array, Array, Array]:
         """
         Jitted predict function of EKF.
@@ -86,8 +70,6 @@ class UKF(Filter):
             t (Array): Time [1].
             m (Array): Mean state [1, N, D].
             P (Array): Covariance [1, N*C, N*C].
-            w_m (Array): Weights for mean computation [4*N*D+1].
-            w_c (Array): Weights for covariance computation [4*N*D+1].
             n (int): Number of sigma points (2*N*D).
             lambda_ (float): Scaling factor lambda.
 
@@ -98,10 +80,26 @@ class UKF(Filter):
 
         anomaly_flags = []
 
+        n = 2 * P.shape[-1]
+        lambda_ = alpha**2 * (n + kappa) - n
+        w_m = jnp.concatenate(
+            [
+                jnp.array([lambda_ / (n + lambda_)]),
+                jnp.full((2 * n,), 1 / (2 * (n + lambda_))),
+            ]
+        )  # [4*N*D+1]
+        w_c = jnp.concatenate(
+            [
+                jnp.array([lambda_ / (n + lambda_) + (1 - alpha**2 + beta)]),
+                jnp.full((2 * n,), 1 / (2 * (n + lambda_))),
+            ]
+        )  # [4*N*D+1]
+
+        P_ = P[0] + jnp.diag(jnp.full(P.shape[-1], 1e-16))
         x_P = jnp.block(
-            [[P[0], jnp.zeros_like(P[0])], [jnp.zeros_like(P[0]), jnp.eye(P.shape[-1])]]
+            [[P_, jnp.zeros_like(P[0])], [jnp.zeros_like(P[0]), jnp.eye(P.shape[-1])]]
         )  # [2*N*D, 2*N*D]
-        S = jnp.nan_to_num(jsp.linalg.cholesky(x_P, lower=True))  # [2*N*D, 2*N*D]
+        S = jnp.linalg.cholesky(x_P)  # [2*N*D, 2*N*D]
 
         m_0 = jnp.concatenate(
             [
@@ -113,8 +111,8 @@ class UKF(Filter):
         )[
             None, :
         ]  # [1, 2*N*D]
-        m_1 = m_0 + jnp.sqrt(n + lambda_) * S.T  # [2*N*D, 2*N*D]
-        m_2 = m_0 - jnp.sqrt(n + lambda_) * S.T  # [2*N*D, 2*N*D]
+        m_1 = m_0 + jnp.sqrt(n + lambda_) * S.T  # [2*N*D, 2*N*D]  # type: ignore
+        m_2 = m_0 - jnp.sqrt(n + lambda_) * S.T  # [2*N*D, 2*N*D]  # type: ignore
 
         x_m = jnp.concatenate(
             [m_0, m_1, m_2],
@@ -129,7 +127,7 @@ class UKF(Filter):
         anomaly_flags.append(jnp.isnan(x_m).any())
 
         t_next, x_m_next, eps, _ = step_fn(
-            t_b, x_m[:, 0]
+            t_b, x_m[:, 0], ode_params
         )  # [4*N*D+1], [4*N*D+1, N, D], [4*N*D+1, N, D]
 
         anomaly_flags.append(jnp.isinf(x_m_next).any())
@@ -154,6 +152,8 @@ class UKF(Filter):
 
         P_next = jnp.einsum(
             "b,bi,bj->ij", w_c, x_m_next - m_next[None, :], x_m_next - m_next[None, :]
+        ) + jnp.diag(
+            jnp.full(P.shape[-1], gamma)
         )  # [N*D, N*D]
 
         anomaly_flags.append(jnp.isinf(P_next).any())
@@ -162,10 +162,65 @@ class UKF(Filter):
         return (
             t_next[0:1],
             m_next[None, :].reshape(*m.shape),
-            x_m_next.reshape(-1, *m.shape[1:]),
             P_next[None, :, :],
+            x_m_next.reshape(-1, *m.shape[1:]),
             jnp.stack(anomaly_flags),
         )
+
+    @staticmethod
+    @partial(jax.jit, static_argnums=[0, 1, 2])
+    def _correct_jit(
+        alpha: float,
+        beta: float,
+        kappa: float,
+        m: Array,
+        P: Array,
+        y: Array,
+        H: Array,
+        R: Array,
+    ) -> Tuple[Array, Array, Array, Array]:
+
+        n = P.shape[-1]
+        lambda_ = alpha**2 * (n + kappa) - n
+        w_m = jnp.concatenate(
+            [
+                jnp.array([lambda_ / (n + lambda_)]),
+                jnp.full((2 * n,), 1 / (2 * (n + lambda_))),
+            ]
+        )  # [2*N*D+1]
+        w_c = jnp.concatenate(
+            [
+                jnp.array([lambda_ / (n + lambda_) + (1 - alpha**2 + beta)]),
+                jnp.full((2 * n,), 1 / (2 * (n + lambda_))),
+            ]
+        )  # [2*N*D+1]
+
+        S_ = jnp.linalg.cholesky(P[0] + jnp.diag(jnp.full(P.shape[-1], 1e-16)))  # [N*D, N*D]
+
+        m_0 = m.ravel()[None, :]  # [1, N*D]
+        m_1 = m_0 + jnp.sqrt(n + lambda_) * S_.T  # [N*D, N*D]  # type: ignore
+        m_2 = m_0 - jnp.sqrt(n + lambda_) * S_.T  # [N*D, N*D]  # type: ignore
+
+        x_m = jnp.concatenate(
+            [m_0, m_1, m_2],
+            axis=0,
+        )  # [2*N*D+1, N*D]
+
+        y_m = H @ x_m.T  # [L, 2*N*D+1]
+        y_hat = y_m @ w_m  # [L]
+        y_delta = y - y_hat  # [L]
+
+        S = (
+            jnp.einsum("b,ib,jb->ij", w_c, y_m - y_hat[:, None], y_m - y_hat[:, None]) + R
+        )  # [L, L]
+        S_cho = jsp.linalg.cho_factor(S, lower=True)  # [L, L]
+        C = jnp.einsum("b,bi,jb->ij", w_c, x_m - m_0, y_m - y_hat[:, None])  # [N*D, L]
+        K = jsp.linalg.cho_solve(S_cho, C.T).T  # [N*D, L]
+
+        m_corrected = m + (K @ y_delta).reshape(*m.shape)  # [1, N, D]
+        P_corrected = P - (K @ S @ K.T)[None, :, :]  # [1, N*D, N*D]
+
+        return m_corrected, P_corrected, y_hat, S
 
     def _predict(self) -> Tuple[Array, Array, Array, Array, Array]:
         """
@@ -179,16 +234,17 @@ class UKF(Filter):
         """
 
         dx_dts = self.rk_solver.fn(self.t, self.m)
-        self.t, self.m, sigma_points, self.P, anomaly_flags = self._predict_jit(
+        self.t, self.m, self.P, sigma_points, anomaly_flags = self._predict_jit(
             self.rk_solver.step,
             self.sigma_sqrt_fn,
+            self.alpha,
+            self.beta,
+            self.kappa,
             self.t,
             self.m,
             self.P,
-            self.w_m,
-            self.w_c,
-            self.n,
-            self.lambda_,
+            0.0,
+            self.rk_solver.fn.params,
         )
 
         if self.anomaly_detection:
@@ -197,7 +253,7 @@ class UKF(Filter):
         return self.t, self.m, self.P, dx_dts, sigma_points
 
     @staticmethod
-    def results_spec() -> Tuple[str, ...]:
+    def results_spec_predict() -> Tuple[str, ...]:
         """
         Results specification.
 

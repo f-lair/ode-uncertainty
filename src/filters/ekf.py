@@ -1,103 +1,103 @@
-from functools import partial
-from typing import Callable, Tuple
+from typing import Callable, Dict, Tuple
 
-import jax
 from jax import Array
+from jax import scipy as jsp
 
-from src.filters.filter import Filter
-from src.filters.sigma_fns import SigmaFn
+from src.covariance_functions.covariance_function import CovarianceFunction
+from src.filters.filter import FilterBuilder, FilterCorrect, FilterPredict
+from src.solvers.solver import Solver
+from src.utils import const_diag, value_and_jacfwd
 
 
-class EKF(Filter):
+class EKF(FilterBuilder):
     """Extended Kalman Filter."""
 
-    @staticmethod
-    def _rk_solver_step_AD(
-        step_fn: Callable[[Array, Array], Tuple[Array, Array, Array, Array]], t: Array, x: Array
-    ) -> Array:
+    def state_def(self, N: int, D: int, L: int) -> Dict[str, Tuple[int, ...]]:
         """
-        Auxiliary function used for differentiating an RK-solver step.
-        D: Latent dimension.
-        N: ODE order.
+        Defines the solver state.
 
         Args:
-            step_fn (Callable[[Array, Array], Tuple[Array, Array, Array, Array]]):
-                RK-solver step function.
-            t (Array): Time [1].
-            x (Array): State [1, N, D].
+            N (int): ODE order.
+            D (int): Latent dimension.
+            L (int): Measurement dimension.
+
+        Raises:
+            NotImplementedError: Needs to be defined for a concrete filter.
 
         Returns:
-            Array: Next state [1, N, D].
+            Dict[str, Tuple[int, ...]]: State definition.
         """
 
-        return step_fn(t, x)[1]
+        return {
+            "t": (1,),
+            "x": (1, N, D),
+            "P": (1, N * D, N * D),
+            "Q": (N * D, N * D),
+            "y": (L,),
+            "y_hat": (1, L),
+            "R": (L, L),
+            "S": (1, L, L),
+        }
 
-    @staticmethod
-    @partial(jax.jit, static_argnums=[0, 1])
-    def _predict_jit(
-        step_fn: Callable[[Array, Array], Tuple[Array, Array, Array, Array]],
-        sigma_fn: SigmaFn,
-        t: Array,
-        m: Array,
-        P: Array,
-    ) -> Tuple[Array, Array, Array, Array, Array]:
-        """
-        Jitted predict function of EKF.
-        D: Latent dimension.
-        N: ODE order.
+    def build_cov_fn(self) -> CovarianceFunction:
+        return self.cov_fn_builder.build()
 
-        Args:
-            step_fn (Callable[[Array, Array], Tuple[Array, Array, Array, Array]]):
-                RK-solver step function.
-            sigma_fn (SigmaFn): Sigma function.
-            t (Array): Time [1].
-            m (Array): Mean state [1, N, D].
-            P (Array): Covariance [1, N*C, N*C].
+    def build_predict(self) -> FilterPredict:
+        def predict(
+            solver: Solver, cov_fn: CovarianceFunction, state: Dict[str, Array]
+        ) -> Dict[str, Array]:
+            t, x, P, Q = state["t"], state["x"], state["P"], state["Q"]
+            solver_state = {"t": t, "x": x}
 
-        Returns:
-            Tuple[Array, Array, Array, Array, Array]: Time [1], mean state [1, N, D],
-                covariance [1, N*D, N*D], Jacobian [1, N*D, N*D], sigma [1, N*D, N*D].
-        """
+            next_solver_state, solver_jacs = value_and_jacfwd(solver, solver_state)
 
-        t_next, m_next, eps, _ = step_fn(t, m)  # [1], [1, N, D], [1, N, D]
-        jac = jax.jacfwd(partial(EKF._rk_solver_step_AD, step_fn, t))(m).reshape(
-            m.size, m.size
-        )  # [N*D, N*D]
-        sigma = sigma_fn(eps.ravel())  # [N*D, N*D]
-        P_next = jac @ P[0] @ jac.T + sigma  # [N*D, N*D]
+            t_next = next_solver_state["t"]  # [1]
+            x_next = next_solver_state["x"]  # [1, N, D]
+            eps = next_solver_state["eps"]  # [1, N, D]
+            jac = solver_jacs["x"]["x"].reshape(x.size, x.size)  # [N*D, N*D]
 
-        return t_next, m_next, P_next[None, :, :], jac[None, :, :], sigma[None, :, :]
+            P_next = (jac @ P[0] @ jac.T + Q + cov_fn(eps.ravel()))[None, :, :]  # [1, N*D, N*D]
 
-    def _predict(self) -> Tuple[Array, Array, Array, Array, Array, Array]:
-        """
-        Predicts state after performing one step of the ODE solver.
-        D: Latent dimension.
-        N: ODE order.
+            next_state = {
+                "t": t_next,
+                "x": x_next,
+                "P": P_next,
+                "Q": state["Q"],
+                "y": state["y"],
+                "y_hat": state["y_hat"],
+                "R": state["R"],
+                "S": state["S"],
+            }
+            return next_state
 
-        Returns:
-            Tuple[Array, Array, Array, Array, Array, Array]: Time [1], mean state [1, N, D],
-                covariance [1, N*D, N*D], mean state derivative [1, N, D], Jacobian [1, N*D, N*D],
-                sigma [1, N*D, N*D].
-        """
+        return predict
 
-        dx_dts = self.rk_solver.fn(self.t, self.m)
-        self.t, self.m, self.P, jac, sigma = self._predict_jit(
-            self.rk_solver.step,
-            self.sigma_fn,
-            self.t,
-            self.m,
-            self.P,
-        )
+    def build_correct(self) -> FilterCorrect:
+        def correct(
+            measurement_fn: Callable[[Array], Array], state: Dict[str, Array]
+        ) -> Dict[str, Array]:
+            x, P, y, R = state["x"], state["P"], state["y"], state["R"]
 
-        return self.t, self.m, self.P, dx_dts, jac, sigma
+            y_hat, H = value_and_jacfwd(measurement_fn, x.ravel())  # [L], [L, N*D]
+            y_delta = y - y_hat  # [L]
 
-    @staticmethod
-    def results_spec() -> Tuple[str, ...]:
-        """
-        Results specification.
+            S = (H @ P[0] @ H.T) + R + const_diag(R.shape[-1], 1e-8)  # [L, L]
+            S_cho = jsp.linalg.cho_factor(S, lower=True)  # [L, L]
+            K = jsp.linalg.cho_solve(S_cho, H @ P[0]).T  # [N*D, L]
 
-        Returns:
-            Tuple[str, ...]: Results keys.
-        """
+            x_corrected = x + (K @ y_delta).reshape(*x.shape)  # [1, N, D]
+            P_corrected = P - (K @ S @ K.T)[None, :, :]  # [1, N*D, N*D]
 
-        return "ts", "xs", "Ps", "dx_dts", "Jacs", "Sigmas"
+            next_state = {
+                "t": state["t"],
+                "x": x_corrected,
+                "P": P_corrected,
+                "Q": state["Q"],
+                "y": state["y"],
+                "y_hat": y_hat[None, :],
+                "R": state["R"],
+                "S": S[None, :, :],
+            }
+            return next_state
+
+        return correct

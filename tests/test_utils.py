@@ -3,7 +3,7 @@ from jax import numpy as jnp
 from jax import random
 from jax import scipy as jsp
 
-from src.filters.gmm_ekf import bmmT, merge_refit
+from src.filters.deprecated.gmm_ekf import bmmT, merge_refit
 from src.solvers import RKF45
 from src.utils import *
 

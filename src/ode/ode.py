@@ -1,46 +1,31 @@
+from typing import Any, Callable, Dict
+
 from jax import Array
+from jax import numpy as jnp
+
+# ODE::(Array:t, Array:x, Dict[str,Array]:params) -> (Array:dx_dt)
+ODE = Callable[[Array, Array, Dict[str, Array]], Array]
 
 
-class ODE:
-    """Abstract base class for explicit order-N ODEs."""
+class ODEBuilder:
+    """Abstract builder base class for explicit order-N ODEs."""
 
-    def fn(self, t: Array, x: Array) -> Array:
+    def __init__(self, **kwargs) -> None:
         """
-        RHS of ODE.
-        D: Latent dimension.
-        N: ODE order.
-        ...: Batch dimension(s).
+        Initializes ODE builder.
+        """
 
-        Args:
-            t (Array): Time [...].
-            x (Array): State [..., N, D].
+        self.params = {k: jnp.array(v) for k, v in kwargs.items() if isinstance(v, float)}
+
+    def build(self) -> ODE:
+        """
+        Builds ODE function.
 
         Raises:
-            NotImplementedError: Needs to be implemented for a concrete ODE.
+            NotImplementedError: Needs to be defined for a concrete ODE.
 
         Returns:
-            Array: d/dt State [..., N, D].
+            ODE: ODE function.
         """
 
         raise NotImplementedError
-
-    def __call__(self, t: Array, x: Array) -> Array:
-        """
-        Shorthand call for RHS of ODE.
-
-        D: Latent dimension.
-        N: ODE order.
-        ...: Batch dimension(s).
-
-        Args:
-            t (Array): Time [...].
-            x (Array): State [..., N, D].
-
-        Raises:
-            NotImplementedError: Needs to be implemented for a concrete ODE.
-
-        Returns:
-            Array: d/dt State [..., N, D].
-        """
-
-        return self.fn(t, x)

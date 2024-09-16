@@ -206,7 +206,7 @@ class UKF_SQRT(UKF):
         return self.t, self.m, self.P, dx_dts, sigma_points
 
     @staticmethod
-    def results_spec() -> Tuple[str, ...]:
+    def results_spec_predict() -> Tuple[str, ...]:
         """
         Results specification.
 

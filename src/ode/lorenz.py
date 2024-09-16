@@ -1,10 +1,12 @@
+from typing import Dict
+
 from jax import Array
 from jax import numpy as jnp
 
-from src.ode.ode import ODE
+from src.ode.ode import ODE, ODEBuilder
 
 
-class Lorenz(ODE):
+class Lorenz(ODEBuilder):
     """Lorenz ODE (first-order)."""
 
     def __init__(
@@ -23,29 +25,30 @@ class Lorenz(ODE):
                 layer itself. Defaults to 28.0.
         """
 
-        self.sigma = jnp.array(sigma)
-        self.beta = jnp.array(beta)
-        self.rho = jnp.array(rho)
+        super().__init__(sigma=sigma, beta=beta, rho=rho)
 
-    def fn(self, t: Array, x: Array) -> Array:
-        """
-        RHS of ODE.
-        D=3: Latent dimension.
-        N=1: ODE order.
-        ...: Batch dimension(s).
+    def build(self) -> ODE:
+        def ode(t: Array, x: Array, params: Dict[str, Array]) -> Array:
+            """
+            RHS of ODE.
+            D=3: Latent dimension.
+            N=1: ODE order.
 
-        Args:
-            t (Array): Time [...].
-            x (Array): State [..., N, D].
+            Args:
+                t (Array): Time [].
+                x (Array): State [N, D].
+                params (Dict[str, Array]): Parameters.
 
-        Returns:
-            Array: d/dt State [..., N, D].
-        """
+            Returns:
+                Array: d/dt State [N, D].
+            """
 
-        dx_dt_next = [
-            self.sigma * (x[..., 1] - x[..., 0]),
-            x[..., 0] * (self.rho - x[..., 2]) - x[..., 1],
-            x[..., 0] * x[..., 1] - self.beta * x[..., 2],
-        ]
+            dx_dt_next = [
+                params["sigma"] * (x[:, 1] - x[:, 0]),
+                x[:, 0] * (params["rho"] - x[:, 2]) - x[:, 1],
+                x[:, 0] * x[:, 1] - params["beta"] * x[:, 2],
+            ]
 
-        return jnp.stack(dx_dt_next, axis=-1)  # [..., N, D]
+            return jnp.stack(dx_dt_next, axis=-1)  # [N, D]
+
+        return ode

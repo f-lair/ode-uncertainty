@@ -1,10 +1,12 @@
+from typing import Dict
+
 from jax import Array
 from jax import numpy as jnp
 
-from src.ode.ode import ODE
+from src.ode.ode import ODE, ODEBuilder
 
 
-class LCAO(ODE):
+class LCAO(ODEBuilder):
     """Linearly Coupled Anharmonic Oscillator (second-order)."""
 
     def __init__(
@@ -26,31 +28,36 @@ class LCAO(ODE):
             coupling_coeff (float, optional): Coefficient for coupling term. Defaults to 0.5.
         """
 
-        self.A = jnp.array(lin_coeff)
-        self.a = jnp.array(cubic_coeff)
-        self.c = jnp.array(coupling_coeff)
+        super().__init__(
+            lin_coeff=lin_coeff, cubic_coeff=cubic_coeff, coupling_coeff=coupling_coeff
+        )
 
-    def fn(self, t: Array, x: Array) -> Array:
-        """
-        RHS of ODE.
-        D=2: Latent dimension.
-        N=2: ODE order.
-        ...: Batch dimension(s).
+    def build(self) -> ODE:
+        def ode(t: Array, x: Array, params: Dict[str, Array]) -> Array:
+            """
+            RHS of ODE.
+            D=2: Latent dimension.
+            N=2: ODE order.
 
-        Args:
-            t (Array): Time [...].
-            x (Array): State [..., N, D].
+            Args:
+                t (Array): Time [].
+                x (Array): State [N, D].
+                params (Dict[str, Array]): Parameters.
 
-        Returns:
-            Array: d/dt State [..., N, D].
-        """
+            Returns:
+                Array: d/dt State [N, D].
+            """
 
-        x_prev = x[..., 0, :]  # [..., D]
-        dx_dt_prev = x[..., 1, :]  # [..., D]
+            x_prev = x[0]  # [D]
+            dx_dt_prev = x[1]  # [D]
 
-        dx_dt_next = dx_dt_prev  # [..., D]
-        d2x_dt2_next = (
-            -self.A * x_prev - self.a * x_prev**3 - self.c * x_prev[..., [1, 0]]
-        )  # [..., D]
+            dx_dt_next = dx_dt_prev  # [D]
+            d2x_dt2_next = (
+                -params["lin_coeff"] * x_prev
+                - params["cubic_coeff"] * x_prev**3
+                - params["coupling_coeff"] * x_prev[[1, 0]]
+            )  # [D]
 
-        return jnp.stack([dx_dt_next, d2x_dt2_next], axis=-2)  # [..., N, D]
+            return jnp.stack([dx_dt_next, d2x_dt2_next], axis=-2)  # [N, D]
+
+        return ode

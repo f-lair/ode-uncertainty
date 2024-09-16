@@ -1,6 +1,8 @@
 h5py==3.11.0
 jax==0.4.31
 jaxlib==0.4.31
+jaxopt==0.8.3
+jax-tqdm==0.2.2
 jsonargparse==4.31.0
 numpy==1.26.4
 pytest==8.2.2
