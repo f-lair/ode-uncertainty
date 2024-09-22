@@ -8,7 +8,7 @@ from jax import random
 from jax import scipy as jsp
 from tensorflow_probability.substrates import jax as tfp
 
-from src.filters.ekf import EKF
+from src.filters.deprecated.ekf import EKF
 from src.filters.sigma_fns import SigmaFn
 from src.ode.ode import ODE
 from src.solvers.rksolver import RKSolver

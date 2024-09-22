@@ -1,9 +1,12 @@
+import jax
 import pytest
+
+jax.config.update("jax_enable_x64", True)
 from jax import numpy as jnp
 from jax import random
 from jax import scipy as jsp
 
-from src.filters.deprecated.gmm_ekf import bmmT, merge_refit
+# from src.filters.deprecated.gmm_ekf import bmmT, merge_refit
 from src.solvers import RKF45
 from src.utils import *
 
@@ -20,11 +23,12 @@ def rand_10x10_L(rand_10x10):
 
 
 def test_sqrt_L_sum_qr(rand_10x10, rand_10x10_L):
-    a = rand_10x10_L
-    b = rand_10x10_L
-    c = sqrt_L_sum_qr(a, b)
+    a = rand_10x10 @ rand_10x10_L
+    b = jnp.diag(jnp.diag(rand_10x10) ** 2)
+    c = sqrt_L_sum_qr(a, b**0.5)
 
-    c_correct = jnp.linalg.cholesky(2 * (rand_10x10 @ rand_10x10.T))
+    x = rand_10x10 @ (rand_10x10_L @ rand_10x10_L.T) @ rand_10x10.T + b
+    c_correct = jnp.linalg.cholesky(x)
 
     assert jnp.allclose(c @ c.T, c_correct @ c_correct.T)
 

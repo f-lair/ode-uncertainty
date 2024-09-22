@@ -77,6 +77,13 @@ class FilterBuilder:
         raise NotImplementedError
 
     def build_parametrized_predict(self) -> ParametrizedFilterPredict:
+        """
+        Builds filter's parametrized predict function.
+
+        Returns:
+            ParametrizedFilterPredict: Parametrized predict function.
+        """
+
         def parametrized_predict(
             solver: ParametrizedSolver,
             cov_fn: CovarianceFunction,

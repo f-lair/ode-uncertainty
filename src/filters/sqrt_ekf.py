@@ -1,16 +1,17 @@
 from typing import Callable, Dict, Tuple
 
-from jax import Array
+from jax import Array, lax
+from jax import numpy as jnp
 from jax import scipy as jsp
 
 from src.covariance_functions.covariance_function import CovarianceFunction
 from src.filters.filter import FilterBuilder, FilterCorrect, FilterPredict
 from src.solvers.solver import Solver
-from src.utils import const_diag, value_and_jacfwd
+from src.utils import sqrt_L_sum_qr, value_and_jacfwd
 
 
-class EKF(FilterBuilder):
-    """Extended Kalman Filter."""
+class SQRT_EKF(FilterBuilder):
+    """Square-root Extended Kalman Filter."""
 
     def state_def(self, N: int, D: int, L: int) -> Dict[str, Tuple[int, ...]]:
         """
@@ -31,22 +32,25 @@ class EKF(FilterBuilder):
         return {
             "t": (1,),
             "x": (1, N, D),
-            "P": (1, N * D, N * D),
-            "Q": (N * D, N * D),
+            "P_sqrt": (1, N * D, N * D),
+            "Q_sqrt": (N * D, N * D),
             "y": (L,),
             "y_hat": (1, L),
-            "R": (L, L),
-            "S": (1, L, L),
+            "R_sqrt": (L, L),
+            "S_sqrt": (1, L, L),
         }
 
     def build_cov_fn(self) -> CovarianceFunction:
-        return self.cov_fn_builder.build()
+        return self.cov_fn_builder.build_sqrt()
 
     def build_predict(self) -> FilterPredict:
         def predict(
-            solver: Solver, cov_fn: CovarianceFunction, state: Dict[str, Array]
+            solver: Solver, cov_fn_sqrt: CovarianceFunction, state: Dict[str, Array]
         ) -> Dict[str, Array]:
-            t, x, P, Q = state["t"], state["x"], state["P"], state["Q"]
+            Q_add_true = lambda P_sqrt_next, Q_sqrt: sqrt_L_sum_qr(P_sqrt_next, Q_sqrt)
+            Q_add_false = lambda P_sqrt_next, Q_sqrt: P_sqrt_next
+
+            t, x, P_sqrt, Q_sqrt = state["t"], state["x"], state["P_sqrt"], state["Q_sqrt"]
             solver_state = {"t": t, "x": x}
 
             next_solver_state, solver_jacs = value_and_jacfwd(solver, solver_state)
@@ -56,17 +60,24 @@ class EKF(FilterBuilder):
             eps = next_solver_state["eps"]  # [1, N, D]
             jac = solver_jacs["x"]["x"].reshape(x.size, x.size)  # [N*D, N*D]
 
-            P_next = (jac @ P[0] @ jac.T + Q + cov_fn(eps.ravel()))[None, :, :]  # [1, N*D, N*D]
+            P_sqrt_next = jac @ P_sqrt[0]  # [N*D, N*D]
+            # Case distinction needed to differentiate through with Q_sqrt=0
+            P_sqrt_next = lax.cond(
+                jnp.any(Q_sqrt >= 1e-12), Q_add_true, Q_add_false, P_sqrt_next, Q_sqrt
+            )  # [N*D, N*D]
+            P_sqrt_next = sqrt_L_sum_qr(P_sqrt_next, cov_fn_sqrt(eps.ravel()))[
+                None, :, :
+            ]  # [1, N*D, N*D]
 
             next_state = {
                 "t": t_next,
                 "x": x_next,
-                "P": P_next,
-                "Q": state["Q"],
+                "P_sqrt": P_sqrt_next,
+                "Q_sqrt": state["Q_sqrt"],
                 "y": state["y"],
                 "y_hat": state["y_hat"],
-                "R": state["R"],
-                "S": state["S"],
+                "R_sqrt": state["R_sqrt"],
+                "S_sqrt": state["S_sqrt"],
             }
             return next_state
 
@@ -76,27 +87,28 @@ class EKF(FilterBuilder):
         def correct(
             measurement_fn: Callable[[Array], Array], state: Dict[str, Array]
         ) -> Dict[str, Array]:
-            x, P, y, R = state["x"], state["P"], state["y"], state["R"]
+            x, P_sqrt, y, R_sqrt = state["x"], state["P_sqrt"], state["y"], state["R_sqrt"]
 
             y_hat, H = value_and_jacfwd(measurement_fn, x.ravel())  # [L], [L, N*D]
             y_delta = y - y_hat  # [L]
 
-            S = (H @ P[0] @ H.T) + R + const_diag(R.shape[-1], 1e-8)  # [L, L]
-            S_cho = jsp.linalg.cho_factor(S, lower=True)  # [L, L]
-            K = jsp.linalg.cho_solve(S_cho, H @ P[0]).T  # [N*D, L]
+            S_sqrt = sqrt_L_sum_qr(H @ P_sqrt[0], R_sqrt)  # [L, L]
+            K = (jsp.linalg.cho_solve((S_sqrt, True), H) @ P_sqrt[0] @ P_sqrt[0].T).T  # [N*D, L]
 
             x_corrected = x + (K @ y_delta).reshape(*x.shape)  # [1, N, D]
-            P_corrected = P - (K @ S @ K.T)[None, :, :]  # [1, N*D, N*D]
+
+            A = jnp.eye(P_sqrt.shape[-1]) - K @ H  # [N*D, N*D]
+            P_sqrt_corrected = sqrt_L_sum_qr(A @ P_sqrt[0], K @ R_sqrt)[None, :, :]
 
             next_state = {
                 "t": state["t"],
                 "x": x_corrected,
-                "P": P_corrected,
-                "Q": state["Q"],
+                "P_sqrt": P_sqrt_corrected,
+                "Q_sqrt": state["Q_sqrt"],
                 "y": state["y"],
                 "y_hat": y_hat[None, :],
-                "R": state["R"],
-                "S": S[None, :, :],
+                "R_sqrt": state["R_sqrt"],
+                "S_sqrt": S_sqrt[None, :, :],
             }
             return next_state
 

@@ -5,7 +5,7 @@ from src.solvers.rksolver import RKSolverBuilder
 
 
 class Dopri65(RKSolverBuilder):
-    """Runge-Kutta-Fehlberg solver (stage S=8, order p=6(5))."""
+    """Dormand-Prince solver (stage S=8, order p=6(5))."""
 
     @classmethod
     def build_A(cls) -> Array:

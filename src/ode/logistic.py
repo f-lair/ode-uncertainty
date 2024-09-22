@@ -1,6 +1,7 @@
 from typing import Dict
 
 from jax import Array
+from jax import numpy as jnp
 
 from src.ode.ode import ODE, ODEBuilder
 
@@ -39,26 +40,31 @@ class Logistic(ODEBuilder):
 
         return ode
 
-    # def Fn(self, t: Array, x0: Array) -> Array:
-    #     """
-    #     Analytic ODE solution.
-    #     D=1: Latent dimension.
-    #     N=1: ODE order.
-    #     T: Time dimension.
-    #     ...: Batch dimension(s).
+    def build_solution(self) -> ODE:
+        def solution(t: Array, x0: Array, params: Dict[str, Array]) -> Array:
+            """
+            Analytic ODE solution.
+            D=1: Latent dimension.
+            N=1: ODE order.
+            T: Time dimension.
 
-    #     Args:
-    #         t (Array): Time [..., T].
-    #         x0 (Array): Initial state [..., N, D].
+            Args:
+                t (Array): Time [T].
+                x0 (Array): Initial state [N, D].
+                params (Dict[str, Array]): Parameters.
 
-    #     Returns:
-    #         Array: Function value [..., T, D].
-    #     """
+            Returns:
+                Array: Function values [T, D].
+            """
 
-    #     b_shape = t.shape + x0.shape[-1:]
-    #     b_x0 = jnp.broadcast_to(x0[..., 0, :], b_shape)  # [..., T, D]
-    #     b_t = jnp.broadcast_to(t[..., None], b_shape)  # [..., T, D]
+            b_shape = t.shape + x0.shape[-1:]
+            b_x0 = jnp.broadcast_to(x0[0:1, :], b_shape)  # [T, D]
+            b_t = jnp.broadcast_to(t[:, None], b_shape)  # [T, D]
 
-    #     return self.params[1] / (
-    #         1.0 + ((self.params[1] - b_x0) / b_x0) * jnp.exp(-self.params[0] * b_t)
-    #     )  # [..., T, D]
+            return params["carrying_capacity"] / (
+                1.0
+                + ((params["carrying_capacity"] - b_x0) / b_x0)
+                * jnp.exp(-params["growth_rate"] * b_t)
+            )  # [T, D]
+
+        return solution

@@ -27,7 +27,7 @@ from src.utils import const_diag, store_data, sync_times
 
 def main(
     output: str,
-    filter_builder: FilterBuilder = EKF(),
+    filter_builder: FilterBuilder = SQRT_EKF(),
     solver_builder: SolverBuilder = Dopri65(),
     ode_builder: ODEBuilder = LotkaVolterra(),
     x0: str = "[[1.0, 1.0]]",
@@ -40,19 +40,42 @@ def main(
     save_interval: int = 1,
     disable_pbar: bool = False,
 ) -> None:
+    """
+    Runs ODE filter.
+    D: Latent dimension.
+    N: ODE order.
+    L: Observation dimension.
+
+    Args:
+        output (str): Path to H5 results file.
+        filter_builder (FilterBuilder, optional): ODE filter builder. Defaults to SQRT_EKF().
+        solver_builder (SolverBuilder, optional): ODE solver builder. Defaults to Dopri65().
+        ode_builder (ODEBuilder, optional): ODE builder. Defaults to LotkaVolterra().
+        x0 (str, optional): Initial value [N, D]. Defaults to "[[1.0, 1.0]]".
+        P0 (str | None, optional): Initial covariance [N*D, N*D]. Defaults to None.
+        t0 (float, optional): Start time. Defaults to 0.0.
+        tN (float, optional): End time. Defaults to 80.0.
+        y_path (str | None, optional): Path to H5 observations file. Defaults to None.
+        measurement_matrix (str | None, optional): Measurement matrix [L, N*D]. Defaults to None.
+        obs_noise_var (float, optional): Observation noise variance. Defaults to 1e-3.
+        save_interval (int, optional): Interval in which results are saved. Defaults to 1.
+        disable_pbar (bool, optional): Disables progress bar. Defaults to False.
+    """
 
     t0_arr = jnp.array([t0])
     x0_arr = jnp.array([literal_eval(x0)])
-    P0_arr = (
-        jnp.zeros((1, x0_arr.size, x0_arr.size)) if P0 is None else jnp.array([literal_eval(P0)])
+    P0_sqrt_arr = (
+        const_diag(x0_arr.size, 1e-12)[None, :, :]
+        if P0 is None
+        else jnp.linalg.cholesky(jnp.array(literal_eval(P0)))[None, :, :]
     )
 
     ode = ode_builder.build()
     step_size = solver_builder.h
     solver_builder.setup(ode, ode_builder.params)
-    solver = jax.vmap(solver_builder.build())
-    filter_predict = filter_builder.build_predict()
-    cov_fn = filter_builder.build_cov_fn()
+    solver = jax.jit(jax.vmap(solver_builder.build()))
+    filter_predict = jax.jit(filter_builder.build_predict(), static_argnums=(0, 1))
+    cov_fn = jax.jit(filter_builder.build_cov_fn())
 
     num_steps = int(math.ceil((tN - t0) / step_size))
 
@@ -71,11 +94,11 @@ def main(
 
         H = jnp.array(literal_eval(measurement_matrix))
         L = H.shape[0]
-        assert H.shape[1] == P0_arr.shape[-1], "Invalid measurement matrix!"
+        assert H.shape[1] == P0_sqrt_arr.shape[-1], "Invalid measurement matrix!"
         measurement_fn = lambda x: H @ x
         ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
-        filter_correct = filter_builder.build_correct()
+        filter_correct = jax.jit(filter_builder.build_correct(), static_argnums=(0,))
     else:
         print("Prediction only")
         L = 0
@@ -89,8 +112,8 @@ def main(
     initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
     initial_state["t"] = jnp.broadcast_to(t0_arr, initial_state["t"].shape)
     initial_state["x"] = jnp.broadcast_to(x0_arr, initial_state["x"].shape)
-    initial_state["P"] = jnp.broadcast_to(P0_arr, initial_state["P"].shape)
-    initial_state["R"] = const_diag(L, obs_noise_var)
+    initial_state["P_sqrt"] = jnp.broadcast_to(P0_sqrt_arr, initial_state["P_sqrt"].shape)
+    initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
 
     traj_states = unroll(
         filter_predict,
@@ -128,8 +151,15 @@ def unroll(
     Unrolls trajectory.
 
     Args:
+        filter_predict (FilterPredict): Predict function of ODE filter.
+        filter_correct (FilterCorrect): Correct function of ODE filter.
         solver (Solver): ODE solver.
+        cov_fn (CovarianceFunction): Covariance function.
+        measurement_fn (Callable[[Array], Array]): Measurement function.
         initial_state (Dict[str, Array]): Initial state.
+        ys (Array): Observations.
+        correct_flags (Array): Flags indicating availability of observations.
+        index_map (Array): Prediction -> observation index map.
         num_steps (int): Number of steps.
         save_interval (int): Interval in which results are saved.
         disable_pbar (bool): Disables progress bar.
@@ -147,10 +177,12 @@ def unroll(
     ) -> Tuple[Dict[str, Array], Dict[str, Array]]:
         correct_flag = correct_flags[idx]
         state["y"] = ys.at[index_map[idx]].get()
-        state = filter_predict(solver, cov_fn, state)
-        state = lax.cond(correct_flag, cond_true_correct, cond_false_correct, state)
+        state_predicted = filter_predict(solver, cov_fn, state)
+        state_corrected = lax.cond(
+            correct_flag, cond_true_correct, cond_false_correct, state_predicted
+        )
 
-        return state, state
+        return state_corrected, state_corrected
 
     _, traj_states = lax.scan(scan_wrapper, initial_state, jnp.arange(num_steps, dtype=int))
     traj_states = {

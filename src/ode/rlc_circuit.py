@@ -60,45 +60,51 @@ class RLCCircuit(ODEBuilder):
 
         return ode
 
-    # def Fn(self, t: Array, x0: Array) -> Array:
-    #     """
-    #     Analytic ODE solution.
-    #     D=1: Latent dimension.
-    #     N=2: ODE order.
-    #     T: Time dimension.
-    #     ...: Batch dimension(s).
+    def build_solution(self) -> ODE:
+        def solution(t: Array, x0: Array, params: Dict[str, Array]) -> Array:
+            """
+            Analytic ODE solution.
+            D=1: Latent dimension.
+            N=2: ODE order.
+            T: Time dimension.
 
-    #     Args:
-    #         t (Array): Time [..., T].
-    #         x0 (Array): Initial state [N, D].
+            Args:
+                t (Array): Time [T].
+                x0 (Array): Initial state [N, D].
+                params (Dict[str, Array]): Parameters.
 
-    #     Returns:
-    #         Array: Function value [..., T, D].
-    #     """
+            Returns:
+                Array: Function values [T, D].
+            """
 
-    #     b_shape = t.shape + x0.shape[-1:]
-    #     b_x0 = jnp.broadcast_to(x0[..., 0, :], b_shape)  # [..., T, D]
-    #     b_t = jnp.broadcast_to(t[..., None], b_shape)  # [..., T, D]
+            b_shape = t.shape + x0.shape[-1:]
+            b_x0 = jnp.broadcast_to(x0[0:1, :], b_shape)  # [T, D]
+            b_t = jnp.broadcast_to(t[:, None], b_shape)  # [T, D]
 
-    #     # Underdamped
-    #     if self.omega0**2 - self.delta**2 > 1e-6:
-    #         return (
-    #             b_x0
-    #             * (jnp.cos(self.omega * b_t) + self.delta / self.omega * jnp.sin(self.omega * b_t))
-    #             * jnp.exp(-self.delta * b_t)
-    #         )  # [..., T, D]
-    #     # Overdamped
-    #     elif self.delta**2 - self.omega0**2 > 1e-6:
-    #         return (
-    #             0.5
-    #             * b_x0
-    #             / self.lambda_
-    #             * (
-    #                 (self.lambda_ + self.delta) * jnp.exp(self.lambda_ * b_t)
-    #                 + (self.lambda_ - self.delta) * jnp.exp(-self.lambda_ * b_t)
-    #             )
-    #             * jnp.exp(-self.delta * b_t)
-    #         )  # [..., T, D]
-    #     # Critically damped
-    #     else:
-    #         return b_x0 * (1.0 + self.delta * b_t) * jnp.exp(-self.delta * b_t)  # [..., T, D]
+            # Underdamped
+            if self.omega0**2 - self.delta**2 > 1e-6:
+                return (
+                    b_x0
+                    * (
+                        jnp.cos(self.omega * b_t)
+                        + self.delta / self.omega * jnp.sin(self.omega * b_t)
+                    )
+                    * jnp.exp(-self.delta * b_t)
+                )  # [T, D]
+            # Overdamped
+            elif self.delta**2 - self.omega0**2 > 1e-6:
+                return (
+                    0.5
+                    * b_x0
+                    / self.lambda_
+                    * (
+                        (self.lambda_ + self.delta) * jnp.exp(self.lambda_ * b_t)
+                        + (self.lambda_ - self.delta) * jnp.exp(-self.lambda_ * b_t)
+                    )
+                    * jnp.exp(-self.delta * b_t)
+                )  # [T, D]
+            # Critically damped
+            else:
+                return b_x0 * (1.0 + self.delta * b_t) * jnp.exp(-self.delta * b_t)  # [T, D]
+
+        return solution

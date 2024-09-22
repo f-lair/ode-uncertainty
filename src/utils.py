@@ -10,6 +10,17 @@ from jax.flatten_util import ravel_pytree
 
 
 def const_diag(n: int, val: float) -> Array:
+    """
+    Constructs diagonal matrix filled with scalar value.
+
+    Args:
+        n (int): Matrix size.
+        val (float): Value.
+
+    Returns:
+        Array: Diagonal matrix filled with value [n, n].
+    """
+
     return jnp.diag(jnp.full(n, val))
 
 
@@ -43,17 +54,31 @@ def store_data(data: Dict[str, Array], out_filepath: str, mode="w") -> None:
     Path(out_filepath).parent.mkdir(parents=True, exist_ok=True)
     with h5py.File(out_filepath, mode) as h5f:
         for k, v in data.items():
+            if k in h5f.keys():
+                del h5f[k]
             h5f.create_dataset(k, data=v)
 
 
-def negative_log_gaussian(x: Array, m: Array, P: Array) -> Array:
+@jax.jit
+def negative_log_gaussian_sqrt(x: Array, m: Array, P_sqrt: Array) -> Array:
+    """
+    Evaluates negative log Gaussian using pre-computed covariance square-root.
+
+    Args:
+        x (Array): Input [..., N].
+        m (Array): Mean [..., N].
+        P_sqrt (Array): Lower-triangular covariance square-root [..., N, N].
+
+    Returns:
+        Array: Evaluation result [...].
+    """
+
     n = m.shape[-1]
-    P_cho = jnp.linalg.cholesky(P + const_diag(P.shape[-1], 1e-8))
-    y = jsp.linalg.solve_triangular(P_cho, x - m, lower=True)  # type: ignore
+    y = jsp.linalg.solve_triangular(P_sqrt, x - m, lower=True)  # type: ignore
     return (
         1 / 2 * jnp.einsum('...i,...i->...', y, y)
         + n / 2 * jnp.log(2 * jnp.pi)
-        + jnp.log(jnp.abs(P_cho.diagonal(axis1=-1, axis2=-2) + 1e-8)).sum(-1)  # type: ignore
+        + jnp.log(jnp.abs(P_sqrt.diagonal(axis1=-1, axis2=-2))).sum(-1)  # type: ignore
     )
 
 
