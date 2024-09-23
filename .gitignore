@@ -4,6 +4,5 @@
 *.h5
 *.ps1
 TODO.md
-configs/
 notebooks/
 animations/

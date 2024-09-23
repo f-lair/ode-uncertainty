@@ -1,0 +1,53 @@
+output: test.h5 #../results/params/lotkavolterra2.h5
+filter_builder:
+  class_path: src.filters.SQRT_EKF
+  init_args:
+    cov_fn_builder:
+      class_path: src.covariance_functions.DiagonalCovariance
+      init_args:
+        scale: 1.0
+solver_builder: 
+  class_path: src.solvers.Dopri65
+  init_args:
+    step_size: 0.01
+ode_builder:
+  class_path: src.ode.LotkaVolterra
+  init_args:
+    alpha: 1.5
+    beta: 1.0
+    gamma: 3.0
+    delta: 1.0
+x0: '[[1.0, 1.0]]'
+P0: null
+t0: 0.0
+tN: 20.0
+y_path: ../results/noise_gt/lotkavolterra.h5
+measurement_matrix: '[[1, 0]]'
+params_range: 
+  alpha: [0.001, 5.0]
+  beta: [0.001, 5.0]
+  gamma: [0.001, 5.0]
+  delta: [0.001, 5.0]
+params_optimized:
+  alpha: true
+  beta: true
+  gamma: false
+  delta: false
+num_tempering_steps: 6
+obs_noise_var: 0.1
+gamma_noise_schedule:
+  class_path: src.noise_schedules.ExponentialDecaySchedule
+  init_args:
+    init_noise_log: -1.0
+    decay_rate: 10.0
+lbfgs_maxiter: 200
+num_random_runs: 20
+num_param_evals:
+  alpha: 50
+  beta: 50
+  gamma: 1
+  delta: 1
+seed: 7
+num_processes: 4
+disable_pbar: false
+verbose: false

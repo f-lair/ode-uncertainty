@@ -1,0 +1,28 @@
+output: null
+filter_builder:
+  class_path: src.filters.ParticleFilter
+  init_args:
+    num_particles: 100
+    cov_fn_builder:
+      class_path: src.covariance_functions.DiagonalCovariance
+      init_args:
+        scale: 1.0
+solver_builder: 
+  class_path: src.solvers.Dopri65
+  init_args:
+    step_size: 0.1
+ode:
+  class_path: src.ode.RLCCircuit
+  init_args:
+    resistance: 100
+    inductance: 250
+    capacitance: 3.5E-05
+x0: '[[10.0], [0.0]]'
+P0: null
+t0: 0.0
+tN: 10.0
+y_path: null #../results/gt/exp.h5
+measurement_matrix: '[[1, 0],[0, 1]]'
+obs_noise_var: 0.0
+save_interval: 1
+disable_pbar: false

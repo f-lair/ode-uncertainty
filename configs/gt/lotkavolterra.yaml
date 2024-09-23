@@ -1,0 +1,18 @@
+output: null
+solver_builder: 
+  class_path: src.solvers.Dopri65
+  init_args:
+    step_size: 0.0001
+ode_builder:
+  class_path: src.ode.LotkaVolterra
+  init_args:
+    alpha: 1.5
+    beta: 1.0
+    gamma: 3.0
+    delta: 1.0
+x0: '[[1.0, 1.0]]'
+t0: 0.0
+tN: 80.0
+noise_var: 0.0
+save_interval: 100
+disable_pbar: false

@@ -1,0 +1,98 @@
+output: ../results/params/hodgkinhuxley1_r4.h5
+filter_builder:
+  class_path: src.filters.SQRT_EKF
+  init_args:
+    cov_fn_builder:
+      class_path: src.covariance_functions.DiagonalCovariance
+      init_args:
+        scale: 1.0
+solver_builder:
+  class_path: src.solvers.Dopri65
+  init_args:
+    step_size: 0.01
+ode_builder:
+  class_path: src.ode.HodgkinHuxley
+  init_args:
+    model: reduced-4
+    C: 1.0
+    A: 8.3e-05
+    g_Na: 25.0
+    E_Na: 53.0
+    g_K: 7.0
+    E_K: -107.0
+    g_leak: 0.1
+    E_leak: -70.0
+    V_T: -60.0
+    g_M: 0.01
+    tau_max: 4000.0
+    g_L: 0.01
+    E_Ca: 120.0
+    g_T: 0.0
+    V_x: 2.0
+x0: '[[-70.0]]'
+P0: null
+t0: 0.0
+tN: 100.0
+y_path: ../results/noise_gt/hodgkinhuxley_r4.h5
+measurement_matrix: '[[1, 0, 0, 0]]'
+params_range:
+  C: [0.4, 3.0]
+  A: [1.9e-05, 30.2e-05]
+  g_Na: [0.5, 80.0]
+  E_Na: [50.0, 100.0]
+  g_K: [1.0e-04, 15.0]
+  E_K: [-110.0, -70.0]
+  g_leak: [1.0e-04, 0.6]
+  E_leak: [-100.0, -35.0]
+  V_T: [-90.0, -40.0]
+  g_M: [1.0e-04, 0.6]
+  tau_max: [50.0, 5000.0]  # 3000.0 lower than obs=4000.0 (?)
+  g_L: [-1.0e-04, 0.6]
+  E_Ca: [100.0, 150.0]
+  g_T: [-1.0e-04, 0.6]
+  V_x: [0.0, 4.0]
+params_optimized:
+  C: false
+  A: false
+  g_Na: true
+  E_Na: false
+  g_K: true
+  E_K: false
+  g_leak: false
+  E_leak: false
+  V_T: false
+  g_M: false
+  tau_max: false
+  g_L: false
+  E_Ca: false
+  g_T: false
+  V_x: false
+num_tempering_steps: 6
+obs_noise_var: 0.1
+gamma_noise_schedule:
+  class_path: src.noise_schedules.ExponentialDecaySchedule
+  init_args:
+    init_noise_log: -10.0
+    decay_rate: 7.0
+lbfgs_maxiter: 200
+num_random_runs: 8
+num_param_evals:
+  C: 1
+  A: 1
+  g_Na: 50
+  E_Na: 1
+  g_K: 50
+  E_K: 1
+  g_leak: 1
+  E_leak: 1
+  V_T: 1
+  g_M: 1
+  tau_max: 1
+  g_L: 1
+  E_Ca: 1
+  g_T: 1
+  V_x: 1
+seed: 7
+num_processes: 4
+disable_pbar: false
+verbose: false

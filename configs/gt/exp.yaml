@@ -1,0 +1,15 @@
+output: null
+solver_builder: 
+  class_path: src.solvers.Dopri65
+  init_args:
+    step_size: 0.0001
+ode_builder:
+  class_path: src.ode.Exponential
+  init_args:
+    growth_factor: -0.5
+x0: '[[1.0]]'
+t0: 0.0
+tN: 10.0
+noise_var: 0.0
+save_interval: 100
+disable_pbar: false
