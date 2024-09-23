@@ -1,4 +1,5 @@
 from .exponential import Exponential
+from .hodgkin_huxley import HodgkinHuxley
 from .lcao import LCAO
 from .logistic import Logistic
 from .lorenz import Lorenz

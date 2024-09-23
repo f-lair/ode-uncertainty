@@ -29,3 +29,20 @@ class ODEBuilder:
         """
 
         raise NotImplementedError
+
+    def build_initial_value(self, initial_value: Array, params: Dict[str, Array]) -> Array:
+        """
+        Builds initial value in cases in which it is dependent on other factors.
+        Defaults to passed initial value.
+        D: Latent dimension.
+        N: ODE order.
+
+        Args:
+            initial_value (Array): Initial value [N, D].
+            params (Dict[str, Array]): Parameters.
+
+        Returns:
+            Array: Built initial value [N, D].
+        """
+
+        return initial_value

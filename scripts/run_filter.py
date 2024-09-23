@@ -64,8 +64,9 @@ def main(
 
     t0_arr = jnp.array([t0])
     x0_arr = jnp.array([literal_eval(x0)])
+    x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
     P0_sqrt_arr = (
-        const_diag(x0_arr.size, 1e-12)[None, :, :]
+        const_diag(x0_arr_built.size, 1e-12)[None, :, :]
         if P0 is None
         else jnp.linalg.cholesky(jnp.array(literal_eval(P0)))[None, :, :]
     )
@@ -108,10 +109,10 @@ def main(
         measurement_fn = lambda x: x
         filter_correct = lambda _, x: x
 
-    state_def = filter_builder.state_def(x0_arr.shape[-2], x0_arr.shape[-1], L)
+    state_def = filter_builder.state_def(x0_arr_built.shape[-2], x0_arr_built.shape[-1], L)
     initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
     initial_state["t"] = jnp.broadcast_to(t0_arr, initial_state["t"].shape)
-    initial_state["x"] = jnp.broadcast_to(x0_arr, initial_state["x"].shape)
+    initial_state["x"] = jnp.broadcast_to(x0_arr_built, initial_state["x"].shape)
     initial_state["P_sqrt"] = jnp.broadcast_to(P0_sqrt_arr, initial_state["P_sqrt"].shape)
     initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
 

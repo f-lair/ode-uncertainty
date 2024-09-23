@@ -62,10 +62,11 @@ def main(
     solver = solver_builder.build()
 
     num_steps = int(math.ceil((tN - t0) / step_size))
-    state_def = solver_builder.state_def(*x0_arr.shape)
+    x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
+    state_def = solver_builder.state_def(*x0_arr_built.shape)
     initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
     initial_state["t"] = t0_arr
-    initial_state["x"] = x0_arr
+    initial_state["x"] = x0_arr_built
 
     traj_states = unroll(solver, initial_state, num_steps, save_interval, disable_pbar)
 
