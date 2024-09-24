@@ -1,13 +1,15 @@
-output: null
+output: ../results/gt/rlc.h5
 solver_builder: 
   class_path: src.solvers.Dopri65
   init_args:
     step_size: 0.0001
 ode_builder:
-  class_path: src.ode.Exponential
+  class_path: src.ode.RLCCircuit
   init_args:
-    growth_factor: -0.5
-x0: '[[1.0]]'
+    resistance: 100
+    inductance: 250
+    capacitance: 3.5E-05
+x0: '[[10.0], [0.0]]'
 t0: 0.0
 tN: 10.0
 noise_var: 0.0

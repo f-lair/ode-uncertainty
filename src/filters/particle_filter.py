@@ -1,5 +1,6 @@
 from typing import Dict, Tuple
 
+import jax
 from jax import Array
 from jax import numpy as jnp
 from jax import random
@@ -37,10 +38,10 @@ class ParticleFilter(FilterBuilder):
             Dict[str, Tuple[int, ...]]: State definition.
         """
 
-        return {"t": (self.M,), "x": (self.M, N, D), "Q": (N * D, N * D)}
+        return {"t": (self.M,), "x": (self.M, N, D), "Q": (N * D, N * D), "prng_key": ()}
 
     def build_cov_fn(self) -> CovarianceFunction:
-        return self.cov_fn_builder.build()
+        return jax.vmap(self.cov_fn_builder.build())
 
     def build_predict(self) -> FilterPredict:
         def predict(
@@ -49,16 +50,21 @@ class ParticleFilter(FilterBuilder):
             t, x, Q, prng_key = state["t"], state["x"], state["Q"], state["prng_key"]
             solver_state = {"t": t, "x": x}
             M, N, D = x.shape
-            p_key, prng_key = random.split(prng_key)
+            prng_key, prng_key_next = random.split(prng_key)
 
             next_solver_state = solver(solver_state)
             t_next = next_solver_state["t"]  # [M]
             x_next = next_solver_state["x"]  # [M, N, D]
             eps = next_solver_state["eps"]  # [M, N, D]
 
+            # print(x.shape, Q.shape, eps.shape, cov_fn(eps.reshape(M, N * D)).shape)
+
             p = (
                 random.multivariate_normal(
-                    p_key, jnp.zeros((M, N * D)), Q + cov_fn(eps.ravel()), method="svd"
+                    prng_key,
+                    jnp.zeros((M, N * D)),
+                    Q[None, :, :] + cov_fn(eps.reshape(M, N * D)),
+                    method="svd",
                 )
                 .reshape(M, N, D)
                 .at[0]
@@ -66,9 +72,12 @@ class ParticleFilter(FilterBuilder):
             )  # [M, N, D]
             x_next = x_next + p  # [M, N, D]
 
-            state["t"] = t_next
-            state["x"] = x_next
-            state["prng_key"] = prng_key
-            return state
+            next_state = {
+                "t": t_next,
+                "x": x_next,
+                "Q": state["Q"],
+                "prng_key": prng_key_next,
+            }
+            return next_state
 
         return predict

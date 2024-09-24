@@ -4,14 +4,14 @@ filter_builder:
   init_args:
     num_particles: 100
     cov_fn_builder:
-      class_path: src.covariance_functions.OuterCovariance
+      class_path: src.covariance_functions.DiagonalCovariance
       init_args:
-        scale: 1.0
+        scale: 3.0
 solver_builder: 
   class_path: src.solvers.Dopri65
   init_args:
     step_size: 0.01
-ode:
+ode_builder:
   class_path: src.ode.LCAO
   init_args:
     lin_coeff: 1.0

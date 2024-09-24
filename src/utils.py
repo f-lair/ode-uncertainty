@@ -56,6 +56,8 @@ def store_data(data: Dict[str, Array], out_filepath: str, mode="w") -> None:
         for k, v in data.items():
             if k in h5f.keys():
                 del h5f[k]
+            if k in {"prng_key"}:
+                continue
             h5f.create_dataset(k, data=v)
 
 

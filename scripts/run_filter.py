@@ -37,6 +37,7 @@ def main(
     y_path: str | None = None,
     measurement_matrix: str | None = None,
     obs_noise_var: float = 1e-3,
+    seed: int = 7,
     save_interval: int = 1,
     disable_pbar: bool = False,
 ) -> None:
@@ -58,6 +59,7 @@ def main(
         y_path (str | None, optional): Path to H5 observations file. Defaults to None.
         measurement_matrix (str | None, optional): Measurement matrix [L, N*D]. Defaults to None.
         obs_noise_var (float, optional): Observation noise variance. Defaults to 1e-3.
+        seed (int, optional): PRNG seed. Defaults to 7.
         save_interval (int, optional): Interval in which results are saved. Defaults to 1.
         disable_pbar (bool, optional): Disables progress bar. Defaults to False.
     """
@@ -113,8 +115,12 @@ def main(
     initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
     initial_state["t"] = jnp.broadcast_to(t0_arr, initial_state["t"].shape)
     initial_state["x"] = jnp.broadcast_to(x0_arr_built, initial_state["x"].shape)
-    initial_state["P_sqrt"] = jnp.broadcast_to(P0_sqrt_arr, initial_state["P_sqrt"].shape)
-    initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
+    if "P_sqrt" in initial_state:
+        initial_state["P_sqrt"] = jnp.broadcast_to(P0_sqrt_arr, initial_state["P_sqrt"].shape)
+    if "R_sqrt" in initial_state:
+        initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
+    if "prng_key" in initial_state:
+        initial_state["prng_key"] = jax.random.key(seed)
 
     traj_states = unroll(
         filter_predict,

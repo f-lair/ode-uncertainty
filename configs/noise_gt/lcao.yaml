@@ -1,4 +1,4 @@
-output: null
+output: ../results/noise_gt/lcao.h5
 solver_builder: 
   class_path: src.solvers.Dopri65
   init_args:

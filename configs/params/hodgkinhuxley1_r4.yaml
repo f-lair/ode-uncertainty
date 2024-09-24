@@ -72,8 +72,8 @@ obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.ExponentialDecaySchedule
   init_args:
-    init_noise_log: -10.0
-    decay_rate: 7.0
+    init_noise_log: -3.0
+    decay_rate: 10.0
 lbfgs_maxiter: 200
 num_random_runs: 8
 num_param_evals:

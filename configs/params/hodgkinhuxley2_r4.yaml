@@ -1,4 +1,4 @@
-output: ../results/params/hodgkinhuxley1_r4.h5
+output: ../results/params/hodgkinhuxley2_r4.h5
 filter_builder:
   class_path: src.filters.SQRT_EKF
   init_args:
@@ -72,8 +72,8 @@ obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.ExponentialDecaySchedule
   init_args:
-    init_noise_log: -10.0
-    decay_rate: 7.0
+    init_noise_log: -3.0
+    decay_rate: 10.0
 lbfgs_maxiter: 200
 num_random_runs: 8
 num_param_evals:
@@ -92,7 +92,7 @@ num_param_evals:
   E_Ca: 1
   g_T: 1
   V_x: 1
-seed: 7
+seed: 6
 num_processes: 4
 disable_pbar: false
 verbose: false

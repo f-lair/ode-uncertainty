@@ -6,12 +6,12 @@ filter_builder:
     cov_fn_builder:
       class_path: src.covariance_functions.DiagonalCovariance
       init_args:
-        scale: 1.0
+        scale: 3.0
 solver_builder: 
   class_path: src.solvers.Dopri65
   init_args:
     step_size: 0.1
-ode:
+ode_builder:
   class_path: src.ode.RLCCircuit
   init_args:
     resistance: 100

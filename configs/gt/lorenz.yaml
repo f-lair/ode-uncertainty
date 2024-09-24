@@ -1,4 +1,4 @@
-output: null
+output: ../results/gt/lorenz.h5
 solver_builder: 
   class_path: src.solvers.Dopri65
   init_args:

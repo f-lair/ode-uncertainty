@@ -55,7 +55,7 @@ class LCAO(ODEBuilder):
             d2x_dt2_next = (
                 -params["lin_coeff"] * x_prev
                 - params["cubic_coeff"] * x_prev**3
-                - params["coupling_coeff"] * x_prev[[1, 0]]
+                - params["coupling_coeff"] * jnp.flip(x_prev)
             )  # [D]
 
             return jnp.stack([dx_dt_next, d2x_dt2_next], axis=-2)  # [N, D]
