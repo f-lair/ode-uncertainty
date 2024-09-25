@@ -5,7 +5,9 @@ from jax import Array
 from jax import numpy as jnp
 from jax import scipy as jsp
 
-from src.covariance_functions.covariance_function import CovarianceFunction
+from src.covariance_update_functions.covariance_update_function import (
+    CovarianceUpdateFunction,
+)
 from src.filters.filter import FilterBuilder, FilterCorrect, FilterPredict
 from src.solvers.solver import Solver
 from src.utils import const_diag, value_and_jacfwd
@@ -41,12 +43,12 @@ class EKF(FilterBuilder):
             "S": (1, L, L),
         }
 
-    def build_cov_fn(self) -> CovarianceFunction:
-        return self.cov_fn_builder.build()
+    def build_cov_update_fn(self) -> CovarianceUpdateFunction:
+        return self.cov_update_fn_builder.build()
 
     def build_predict(self) -> FilterPredict:
         def predict(
-            solver: Solver, cov_fn: CovarianceFunction, state: Dict[str, Array]
+            solver: Solver, cov_update_fn: CovarianceUpdateFunction, state: Dict[str, Array]
         ) -> Dict[str, Array]:
             t, x, P, Q = state["t"], state["x"], state["P"], state["Q"]
             solver_state = {"t": t, "x": x}
@@ -58,7 +60,9 @@ class EKF(FilterBuilder):
             eps = next_solver_state["eps"]  # [1, N, D]
             jac = solver_jacs["x"]["x"].reshape(x.size, x.size)  # [N*D, N*D]
 
-            P_next = (jac @ P[0] @ jac.T + Q + cov_fn(eps.ravel()))[None, :, :]  # [1, N*D, N*D]
+            P_next = (jac @ P[0] @ jac.T + cov_update_fn(Q, eps.ravel()))[
+                None, :, :
+            ]  # [1, N*D, N*D]
 
             next_state = {
                 "t": t_next,

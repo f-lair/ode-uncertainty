@@ -4,21 +4,21 @@ from typing import Callable, Dict, Tuple
 from jax import Array
 from jax.tree_util import Partial
 
-from src.covariance_functions import DiagonalCovariance
-from src.covariance_functions.covariance_function import (
-    CovarianceFunction,
-    CovarianceFunctionBuilder,
+from src.covariance_update_functions import DiagonalCovarianceUpdate
+from src.covariance_update_functions.covariance_update_function import (
+    CovarianceUpdateFunction,
+    CovarianceUpdateFunctionBuilder,
 )
 from src.ode.ode import ODE
 from src.solvers.solver import ParametrizedSolver, Solver
 
-# FilterPredict::(Solver:solver, CovarianceFunction:cov_fn, Dict[str, Array]:state) ->
+# FilterPredict::(Solver:solver, CovarianceUpdateFunction:cov_update_fn, Dict[str, Array]:state) ->
 # (Dict[str, Array]:next_state)
-FilterPredict = Callable[[Solver, CovarianceFunction, Dict[str, Array]], Dict[str, Array]]
-# ParametrizedFilterPredict::(Solver:solver, CovarianceFunction:cov_fn, ODE:ode,
+FilterPredict = Callable[[Solver, CovarianceUpdateFunction, Dict[str, Array]], Dict[str, Array]]
+# ParametrizedFilterPredict::(Solver:solver, CovarianceUpdateFunction:cov_update_fn, ODE:ode,
 # Dict[str,Array]:params, Dict[str, Array]:state) -> (Dict[str, Array]:next_state)
 ParametrizedFilterPredict = Callable[
-    [ParametrizedSolver, CovarianceFunction, ODE, Dict[str, Array], Dict[str, Array]],
+    [ParametrizedSolver, CovarianceUpdateFunction, ODE, Dict[str, Array], Dict[str, Array]],
     Dict[str, Array],
 ]
 # FilterCorrect::(Callable[[Array], Array]:measurement_fn, Dict[str, Array]:state) ->
@@ -29,8 +29,10 @@ FilterCorrect = Callable[[Callable[[Array], Array], Dict[str, Array]], Dict[str,
 class FilterBuilder:
     """Abstract builder base class for filters, used for ODE solving."""
 
-    def __init__(self, cov_fn_builder: CovarianceFunctionBuilder = DiagonalCovariance()) -> None:
-        self.cov_fn_builder = cov_fn_builder
+    def __init__(
+        self, cov_update_fn_builder: CovarianceUpdateFunctionBuilder = DiagonalCovarianceUpdate()
+    ) -> None:
+        self.cov_update_fn_builder = cov_update_fn_builder
 
     def state_def(self, N: int, D: int, L: int) -> Dict[str, Tuple[int, ...]]:
         """
@@ -50,7 +52,7 @@ class FilterBuilder:
 
         raise NotImplementedError
 
-    def build_cov_fn(self) -> CovarianceFunction:
+    def build_cov_update_fn(self) -> CovarianceUpdateFunction:
         """
         Builds covariance function.
 
@@ -58,7 +60,7 @@ class FilterBuilder:
             NotImplementedError: Needs to be implemented for a concrete filter.
 
         Returns:
-            CovarianceFunction: Covariance function.
+            CovarianceUpdateFunction: Covariance function.
         """
 
         raise NotImplementedError
@@ -86,13 +88,13 @@ class FilterBuilder:
 
         def parametrized_predict(
             solver: ParametrizedSolver,
-            cov_fn: CovarianceFunction,
+            cov_update_fn: CovarianceUpdateFunction,
             ode: ODE,
             params: Dict[str, Array],
             state: Dict[str, Array],
         ) -> Dict[str, Array]:
             predict = self.build_predict()
-            return predict(partial(solver, ode, params), cov_fn, state)
+            return predict(partial(solver, ode, params), cov_update_fn, state)
 
         return parametrized_predict
 

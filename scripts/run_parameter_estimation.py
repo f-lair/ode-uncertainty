@@ -20,8 +20,10 @@ from jsonargparse import CLI
 from p_tqdm import p_umap
 from tqdm import trange
 
-from src.covariance_functions import *
-from src.covariance_functions.covariance_function import CovarianceFunction
+from src.covariance_update_functions import *
+from src.covariance_update_functions.covariance_update_function import (
+    CovarianceUpdateFunction,
+)
 from src.filters import *
 from src.filters.filter import FilterBuilder, FilterCorrect, ParametrizedFilterPredict
 from src.noise_schedules import *
@@ -122,8 +124,6 @@ def optimize(
         x_indices, y_indices = sync_times(ts_x, ts_y)
         x_flags = jnp.zeros(ts_x.shape, dtype=bool)
         x_flags = x_flags.at[x_indices].set(True)
-        xy_index_map = jnp.zeros(ts_x.shape, dtype=int)
-        xy_index_map = xy_index_map.at[x_indices].set(y_indices)
 
         ys = jnp.asarray(h5f["x"])[y_indices]
 
@@ -179,7 +179,6 @@ def optimize(
         H,
         ys,
         x_flags,
-        xy_index_map,
         params_min,
         params_max,
         params_optimized_arr,
@@ -282,7 +281,7 @@ def evaluate(
     )
     filter_predict = jax.jit(filter_builder.build_parametrized_predict(), static_argnums=(0, 1, 2))
     filter_correct = jax.jit(filter_builder.build_correct(), static_argnums=(0,))
-    cov_fn = jax.jit(filter_builder.build_cov_fn())
+    cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
 
     num_steps = int(math.ceil((tN - t0) / step_size))
 
@@ -304,8 +303,6 @@ def evaluate(
         x_indices, y_indices = sync_times(ts_x, ts_y)
         x_flags = jnp.zeros(ts_x.shape, dtype=bool)
         x_flags = x_flags.at[x_indices].set(True)
-        xy_index_map = jnp.zeros(ts_x.shape, dtype=int)
-        xy_index_map = xy_index_map.at[x_indices].set(y_indices)
 
         ys = jnp.asarray(h5f["x"])[y_indices]
 
@@ -346,7 +343,7 @@ def evaluate(
         filter_correct,
         solver,
         ode,
-        cov_fn,
+        cov_update_fn,
         measurement_fn,
     )
     nll_evals = []
@@ -375,7 +372,6 @@ def evaluate(
                 deepcopy(initial_state),
                 ys,
                 x_flags,
-                xy_index_map,
                 params_min_reduced,
                 params_max_reduced,
                 params_optimized_indices,
@@ -409,7 +405,6 @@ def optimize_run(
     H: Array,
     ys: Array,
     correct_flags: Array,
-    index_map: Array,
     params_min: Dict[str, Array],
     params_max: Dict[str, Array],
     params_optimized: Dict[str, Array],
@@ -431,7 +426,6 @@ def optimize_run(
         H (Array): Measurement matrix.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
-        index_map (Array): Prediction -> observation index map.
         params_min (Dict[str, Array]): Minimum values per parameter.
         params_max (Dict[str, Array]): Maximum values per parameter.
         params_optimized (Dict[str, Array]): Parameters to be optimized.
@@ -454,7 +448,7 @@ def optimize_run(
     )
     filter_predict = jax.jit(filter_builder.build_parametrized_predict(), static_argnums=(0, 1, 2))
     filter_correct = jax.jit(filter_builder.build_correct(), static_argnums=(0,))
-    cov_fn = jax.jit(filter_builder.build_cov_fn())
+    cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
     measurement_fn = lambda x: H @ x
 
     params_norms_reduced = {k: v for k, v in params_norms.items() if params_optimized[k]}
@@ -469,7 +463,7 @@ def optimize_run(
         filter_correct,
         solver,
         ode,
-        cov_fn,
+        cov_update_fn,
         measurement_fn,
     )
 
@@ -509,7 +503,6 @@ def optimize_run(
             initial_state=deepcopy(initial_state),
             ys=ys,
             correct_flags=correct_flags,
-            index_map=index_map,
             params_min=params_min_reduced,
             params_max=params_max_reduced,
             params_optimized_indices=params_optimized_indices,
@@ -540,13 +533,12 @@ def nll(
     filter_correct: FilterCorrect,
     solver: ParametrizedSolver,
     ode: ODE,
-    cov_fn: CovarianceFunction,
+    cov_update_fn: CovarianceUpdateFunction,
     measurement_fn: Callable[[Array], Array],
     params_norm: Dict[str, Array],
     initial_state: Dict[str, Array],
     ys: Array,
     correct_flags: Array,
-    index_map: Array,
     params_min: Dict[str, Array],
     params_max: Dict[str, Array],
     params_optimized_indices: Array,
@@ -561,13 +553,12 @@ def nll(
         filter_correct (FilterCorrect): Parametrized correct function of ODE filter.
         solver (ParametrizedSolver): Parametrized ODE solver.
         ode (ODE): ODE RHS.
-        cov_fn (CovarianceFunction): Covariance function.
+        cov_update_fn (CovarianceFunction): Covariance function.
         measurement_fn (Callable[[Array], Array]): Measurement function.
         params_norm (Dict[str, Array]): Normalized ODE parameters.
         initial_state (Dict[str, Array]): Initial state.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
-        index_map (Array): Prediction -> observation index map.
         params_min (Dict[str, Array]): Minimum values per parameter.
         params_max (Dict[str, Array]): Maximum values per parameter.
         params_optimized_indices (Array): Indices of parameters to be optimized.
@@ -599,8 +590,8 @@ def nll(
 
     def nll_step(state: Dict[str, Array], idx: Array) -> Tuple[Dict[str, Array], Array]:
         correct_flag = correct_flags[idx]
-        state["y"] = ys.at[index_map[idx]].get()
-        state_predicted = filter_predict(solver, cov_fn, ode, params, state)
+        state["y"] = ys.at[idx].get()
+        state_predicted = filter_predict(solver, cov_update_fn, ode, params, state)
 
         state_corrected, nlg = lax.cond(
             correct_flag, cond_true_correct, cond_false_correct, state_predicted

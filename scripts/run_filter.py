@@ -14,8 +14,10 @@ from jax import numpy as jnp
 from jax_tqdm import scan_tqdm
 from jsonargparse import CLI
 
-from src.covariance_functions import *
-from src.covariance_functions.covariance_function import CovarianceFunction
+from src.covariance_update_functions import *
+from src.covariance_update_functions.covariance_update_function import (
+    CovarianceUpdateFunction,
+)
 from src.filters import *
 from src.filters.filter import FilterBuilder, FilterCorrect, FilterPredict
 from src.ode import *
@@ -78,7 +80,7 @@ def main(
     solver_builder.setup(ode, ode_builder.params)
     solver = jax.jit(jax.vmap(solver_builder.build()))
     filter_predict = jax.jit(filter_builder.build_predict(), static_argnums=(0, 1))
-    cov_fn = jax.jit(filter_builder.build_cov_fn())
+    cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
 
     num_steps = int(math.ceil((tN - t0) / step_size))
 
@@ -90,8 +92,6 @@ def main(
             x_indices, y_indices = sync_times(ts_x, ts_y)
             x_flags = jnp.zeros(ts_x.shape, dtype=bool)
             x_flags = x_flags.at[x_indices].set(True)
-            xy_index_map = jnp.zeros(ts_x.shape, dtype=int)
-            xy_index_map = xy_index_map.at[x_indices].set(y_indices)
 
             ys = jnp.asarray(h5f["x"])[y_indices]
 
@@ -106,7 +106,6 @@ def main(
         print("Prediction only")
         L = 0
         x_flags = jnp.zeros(num_steps, dtype=bool)
-        xy_index_map = jnp.zeros(num_steps, dtype=int)
         ys = jnp.zeros((1, L))
         measurement_fn = lambda x: x
         filter_correct = lambda _, x: x
@@ -126,12 +125,11 @@ def main(
         filter_predict,
         filter_correct,
         solver,
-        cov_fn,
+        cov_update_fn,
         measurement_fn,
         initial_state,
         ys,
         x_flags,
-        xy_index_map,
         num_steps,
         save_interval,
         disable_pbar,
@@ -144,12 +142,11 @@ def unroll(
     filter_predict: FilterPredict,
     filter_correct: FilterCorrect,
     solver: Solver,
-    cov_fn: CovarianceFunction,
+    cov_update_fn: CovarianceUpdateFunction,
     measurement_fn: Callable[[Array], Array],
     initial_state: Dict[str, Array],
     ys: Array,
     correct_flags: Array,
-    index_map: Array,
     num_steps: int,
     save_interval: int,
     disable_pbar: bool,
@@ -161,12 +158,11 @@ def unroll(
         filter_predict (FilterPredict): Predict function of ODE filter.
         filter_correct (FilterCorrect): Correct function of ODE filter.
         solver (Solver): ODE solver.
-        cov_fn (CovarianceFunction): Covariance function.
+        cov_update_fn (CovarianceFunction): Covariance function.
         measurement_fn (Callable[[Array], Array]): Measurement function.
         initial_state (Dict[str, Array]): Initial state.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
-        index_map (Array): Prediction -> observation index map.
         num_steps (int): Number of steps.
         save_interval (int): Interval in which results are saved.
         disable_pbar (bool): Disables progress bar.
@@ -183,8 +179,8 @@ def unroll(
         state: Dict[str, Array], idx: Array
     ) -> Tuple[Dict[str, Array], Dict[str, Array]]:
         correct_flag = correct_flags[idx]
-        state["y"] = ys.at[index_map[idx]].get()
-        state_predicted = filter_predict(solver, cov_fn, state)
+        state["y"] = ys.at[idx].get()
+        state_predicted = filter_predict(solver, cov_update_fn, state)
         state_corrected = lax.cond(
             correct_flag, cond_true_correct, cond_false_correct, state_predicted
         )

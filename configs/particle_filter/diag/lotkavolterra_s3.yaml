@@ -3,8 +3,8 @@ filter_builder:
   class_path: src.filters.ParticleFilter
   init_args:
     num_particles: 100
-    cov_fn_builder:
-      class_path: src.covariance_functions.DiagonalCovariance
+    cov_update_fn_builder:
+      class_path: src.covariance_update_functions.DiagonalCovarianceUpdate
       init_args:
         scale: 3.0
 solver_builder: 

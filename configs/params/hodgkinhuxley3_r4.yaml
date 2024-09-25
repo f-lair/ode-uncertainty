@@ -2,8 +2,8 @@ output: ../results/params/hodgkinhuxley3_r4.h5
 filter_builder:
   class_path: src.filters.SQRT_EKF
   init_args:
-    cov_fn_builder:
-      class_path: src.covariance_functions.DiagonalCovariance
+    cov_update_fn_builder:
+      class_path: src.covariance_update_functions.DiagonalCovarianceUpdate
       init_args:
         scale: 1.0
 solver_builder:
