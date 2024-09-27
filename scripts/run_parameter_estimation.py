@@ -15,7 +15,7 @@ from jax import Array, lax
 from jax import numpy as jnp
 from jax import random
 from jax.flatten_util import ravel_pytree
-from jaxopt import LBFGSB
+from jaxopt import ScipyBoundedMinimize
 from jsonargparse import CLI
 from p_tqdm import p_umap
 from tqdm import trange
@@ -336,15 +336,17 @@ def evaluate(
     )
     _, unravel_fn = ravel_pytree(ode_builder.params)
 
-    nll_p = partial(
-        nll,
-        num_steps,
-        filter_predict,
-        filter_correct,
-        solver,
-        ode,
-        cov_update_fn,
-        measurement_fn,
+    nll_p = jax.jit(
+        partial(
+            nll,
+            num_steps,
+            filter_predict,
+            filter_correct,
+            solver,
+            ode,
+            cov_update_fn,
+            measurement_fn,
+        )
     )
     nll_evals = []
     gammas = []
@@ -441,7 +443,7 @@ def optimize_run(
             total number of LBFGS iterations.
     """
 
-    ode = ode_builder.build()
+    ode = jax.jit(ode_builder.build())
     solver_builder.setup(ode, ode_builder.params)
     solver = jax.jit(
         jax.vmap(solver_builder.build_parametrized(), (None, None, 0)), static_argnums=(0,)
@@ -456,18 +458,20 @@ def optimize_run(
     params_max_reduced = {k: v for k, v in params_max.items() if params_optimized[k]}
     params_optimized_indices = jnp.flatnonzero(ravel_pytree(params_optimized)[0])
 
-    nll_p = partial(
-        nll,
-        num_steps,
-        filter_predict,
-        filter_correct,
-        solver,
-        ode,
-        cov_update_fn,
-        measurement_fn,
+    nll_p = jax.jit(
+        partial(
+            nll,
+            num_steps,
+            filter_predict,
+            filter_correct,
+            solver,
+            ode,
+            cov_update_fn,
+            measurement_fn,
+        ),
     )
 
-    lbfgsb = LBFGSB(nll_p, maxiter=lbfgs_maxiter, jit=True, verbose=False)
+    lbfgsb = ScipyBoundedMinimize(fun=nll_p, method="L-BFGS-B", maxiter=lbfgs_maxiter, jit=True)
     bounds = ({k: 0.0 for k in params_norms_reduced}, {k: 1.0 for k in params_norms_reduced})
 
     params_norm = {k: params_norms[k][run_idx] for k in params_norms}
@@ -512,7 +516,7 @@ def optimize_run(
             params_norm_reduced, params_min_reduced, params_max_reduced
         )
         params_optims_reduced.append(ravel_pytree(params_optim_reduced)[0])
-        nll_optims.append(lbfgsb_state.value)
+        nll_optims.append(lbfgsb_state.fun_val)
         num_lbfgs_iters = num_lbfgs_iters + lbfgsb_state.iter_num
 
         if verbose:
