@@ -87,13 +87,13 @@ def main(
     if y_path is not None and measurement_matrix is not None:
         with h5py.File(y_path) as h5f:
             ts_y = jnp.asarray(h5f["t"])
-            ts_x = jnp.arange(t0, tN + step_size, step_size)
-
+            ts_x = jnp.arange(t0 + step_size, tN + step_size, step_size)
             x_indices, y_indices = sync_times(ts_x, ts_y)
             x_flags = jnp.zeros(ts_x.shape, dtype=bool)
             x_flags = x_flags.at[x_indices].set(True)
-
-            ys = jnp.asarray(h5f["x"])[y_indices]
+            xy_index_map = jnp.zeros(ts_x.shape, dtype=int)
+            xy_index_map = xy_index_map.at[x_indices].set(y_indices)
+            ys = jnp.asarray(h5f["x"])
 
         H = jnp.array(literal_eval(measurement_matrix))
         L = H.shape[0]
@@ -106,6 +106,7 @@ def main(
         print("Prediction only")
         L = 0
         x_flags = jnp.zeros(num_steps, dtype=bool)
+        xy_index_map = jnp.zeros(num_steps, dtype=int)
         ys = jnp.zeros((1, L))
         measurement_fn = lambda x: x
         filter_correct = lambda _, x: x
@@ -130,6 +131,7 @@ def main(
         initial_state,
         ys,
         x_flags,
+        xy_index_map,
         num_steps,
         save_interval,
         disable_pbar,
@@ -147,6 +149,7 @@ def unroll(
     initial_state: Dict[str, Array],
     ys: Array,
     correct_flags: Array,
+    xy_index_map: Array,
     num_steps: int,
     save_interval: int,
     disable_pbar: bool,
@@ -163,6 +166,7 @@ def unroll(
         initial_state (Dict[str, Array]): Initial state.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
+        index_map (Array): Prediction -> observation index map.
         num_steps (int): Number of steps.
         save_interval (int): Interval in which results are saved.
         disable_pbar (bool): Disables progress bar.
@@ -179,7 +183,7 @@ def unroll(
         state: Dict[str, Array], idx: Array
     ) -> Tuple[Dict[str, Array], Dict[str, Array]]:
         correct_flag = correct_flags[idx]
-        state["y"] = ys.at[idx].get()
+        state["y"] = ys.at[xy_index_map[idx]].get()
         state_predicted = filter_predict(solver, cov_update_fn, state)
         state_corrected = lax.cond(
             correct_flag, cond_true_correct, cond_false_correct, state_predicted

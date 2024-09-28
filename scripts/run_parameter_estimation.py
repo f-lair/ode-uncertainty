@@ -119,13 +119,13 @@ def optimize(
 
     with h5py.File(y_path) as h5f:
         ts_y = jnp.asarray(h5f["t"])
-        ts_x = jnp.arange(t0, tN + step_size, step_size)
-
+        ts_x = jnp.arange(t0 + step_size, tN + step_size, step_size)
         x_indices, y_indices = sync_times(ts_x, ts_y)
         x_flags = jnp.zeros(ts_x.shape, dtype=bool)
         x_flags = x_flags.at[x_indices].set(True)
-
-        ys = jnp.asarray(h5f["x"])[y_indices]
+        xy_index_map = jnp.zeros(ts_x.shape, dtype=int)
+        xy_index_map = xy_index_map.at[x_indices].set(y_indices)
+        ys = jnp.asarray(h5f["x"])
 
     H = jnp.array(literal_eval(measurement_matrix))
     L = H.shape[0]
@@ -179,6 +179,7 @@ def optimize(
         H,
         ys,
         x_flags,
+        xy_index_map,
         params_min,
         params_max,
         params_optimized_arr,
@@ -298,13 +299,13 @@ def evaluate(
 
     with h5py.File(y_path) as h5f:
         ts_y = jnp.asarray(h5f["t"])
-        ts_x = jnp.arange(t0, tN + step_size, step_size)
-
+        ts_x = jnp.arange(t0 + step_size, tN + step_size, step_size)
         x_indices, y_indices = sync_times(ts_x, ts_y)
         x_flags = jnp.zeros(ts_x.shape, dtype=bool)
         x_flags = x_flags.at[x_indices].set(True)
-
-        ys = jnp.asarray(h5f["x"])[y_indices]
+        xy_index_map = jnp.zeros(ts_x.shape, dtype=int)
+        xy_index_map = xy_index_map.at[x_indices].set(y_indices)
+        ys = jnp.asarray(h5f["x"])
 
     H = jnp.array(literal_eval(measurement_matrix))
     L = H.shape[0]
@@ -374,6 +375,7 @@ def evaluate(
                 deepcopy(initial_state),
                 ys,
                 x_flags,
+                xy_index_map,
                 params_min_reduced,
                 params_max_reduced,
                 params_optimized_indices,
@@ -407,6 +409,7 @@ def optimize_run(
     H: Array,
     ys: Array,
     correct_flags: Array,
+    xy_index_map: Array,
     params_min: Dict[str, Array],
     params_max: Dict[str, Array],
     params_optimized: Dict[str, Array],
@@ -418,16 +421,19 @@ def optimize_run(
     Performs a single optimization run.
 
     Args:
-        params_norms (Dict[str, Array]): Normed parameters.
-        initial_state (Dict[str, Array]): Initial state.
-        nll_p (Callable): NLL function.
+        filter_builder (FilterBuilder): ODE filter builder.
+        solver_builder (SolverBuilder): ODE solver builder.
         ode_builder (ODEBuilder): ODE builder.
         gamma_noise_schedule (NoiseSchedule): Noise schedule used for tempering.
+        params_norms (Dict[str, Array]): Normed parameters.
+        initial_state (Dict[str, Array]): Initial state.
+        num_steps (int): Number of steps.
         num_tempering_steps (int): Number of tempering steps.
         x0 (Array): Initial value.
         H (Array): Measurement matrix.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
+        index_map (Array): Prediction -> observation index map.
         params_min (Dict[str, Array]): Minimum values per parameter.
         params_max (Dict[str, Array]): Maximum values per parameter.
         params_optimized (Dict[str, Array]): Parameters to be optimized.
@@ -440,7 +446,7 @@ def optimize_run(
             Initial parameters,
             optimized parameters at tempering stages,
             NLL values at tempering stages,
-            total number of LBFGS iterations.
+            number of LBFGS iterations.
     """
 
     ode = jax.jit(ode_builder.build())
@@ -481,7 +487,7 @@ def optimize_run(
     )[0]
     params_optims_reduced = []
     nll_optims = []
-    num_lbfgs_iters = jnp.zeros(())
+    num_lbfgs_iters = []
 
     if verbose:
         print(
@@ -507,6 +513,7 @@ def optimize_run(
             initial_state=deepcopy(initial_state),
             ys=ys,
             correct_flags=correct_flags,
+            xy_index_map=xy_index_map,
             params_min=params_min_reduced,
             params_max=params_max_reduced,
             params_optimized_indices=params_optimized_indices,
@@ -517,7 +524,7 @@ def optimize_run(
         )
         params_optims_reduced.append(ravel_pytree(params_optim_reduced)[0])
         nll_optims.append(lbfgsb_state.fun_val)
-        num_lbfgs_iters = num_lbfgs_iters + lbfgsb_state.iter_num
+        num_lbfgs_iters.append(lbfgsb_state.iter_num)
 
         if verbose:
             print(f"Gamma [{tempering_idx+1}]:", gamma)
@@ -526,6 +533,7 @@ def optimize_run(
         jax.clear_caches()
     params_optims_reduced = jnp.stack(params_optims_reduced)
     nll_optims = jnp.stack(nll_optims)
+    num_lbfgs_iters = jnp.stack(num_lbfgs_iters)
 
     return params_init_reduced, params_optims_reduced, nll_optims, num_lbfgs_iters
 
@@ -543,6 +551,7 @@ def nll(
     initial_state: Dict[str, Array],
     ys: Array,
     correct_flags: Array,
+    xy_index_map: Array,
     params_min: Dict[str, Array],
     params_max: Dict[str, Array],
     params_optimized_indices: Array,
@@ -563,6 +572,7 @@ def nll(
         initial_state (Dict[str, Array]): Initial state.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
+        index_map (Array): Prediction -> observation index map.
         params_min (Dict[str, Array]): Minimum values per parameter.
         params_max (Dict[str, Array]): Maximum values per parameter.
         params_optimized_indices (Array): Indices of parameters to be optimized.
@@ -594,7 +604,7 @@ def nll(
 
     def nll_step(state: Dict[str, Array], idx: Array) -> Tuple[Dict[str, Array], Array]:
         correct_flag = correct_flags[idx]
-        state["y"] = ys.at[idx].get()
+        state["y"] = ys.at[xy_index_map[idx]].get()
         state_predicted = filter_predict(solver, cov_update_fn, ode, params, state)
 
         state_corrected, nlg = lax.cond(
