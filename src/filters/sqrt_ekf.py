@@ -4,8 +4,10 @@ from jax import Array, lax
 from jax import numpy as jnp
 from jax import scipy as jsp
 
+from src.covariance_update_functions import DiagonalCovarianceUpdate
 from src.covariance_update_functions.covariance_update_function import (
     CovarianceUpdateFunction,
+    CovarianceUpdateFunctionBuilder,
 )
 from src.filters.filter import FilterBuilder, FilterCorrect, FilterPredict
 from src.solvers.solver import Solver
@@ -14,6 +16,14 @@ from src.utils import sqrt_L_sum_qr, value_and_jacfwd
 
 class SQRT_EKF(FilterBuilder):
     """Square-root Extended Kalman Filter."""
+
+    def __init__(
+        self,
+        cov_update_fn_builder: CovarianceUpdateFunctionBuilder = DiagonalCovarianceUpdate(),
+        disable_cov_update: bool = False,
+    ) -> None:
+        super().__init__(cov_update_fn_builder)
+        self.disable_cov_update = disable_cov_update
 
     def state_def(self, N: int, D: int, L: int) -> Dict[str, Tuple[int, ...]]:
         """
@@ -52,6 +62,9 @@ class SQRT_EKF(FilterBuilder):
             Q_add_true = lambda P_sqrt_next, Q_sqrt: sqrt_L_sum_qr(P_sqrt_next, Q_sqrt)
             Q_add_false = lambda P_sqrt_next, Q_sqrt: P_sqrt_next
 
+            cov_update_true = lambda P_sqrt_next, eps: cov_update_fn_sqrt(P_sqrt_next, eps.ravel())
+            cov_update_false = lambda P_sqrt_next, eps: P_sqrt_next
+
             t, x, P_sqrt, Q_sqrt = state["t"], state["x"], state["P_sqrt"], state["Q_sqrt"]
             solver_state = {"t": t, "x": x}
 
@@ -65,14 +78,16 @@ class SQRT_EKF(FilterBuilder):
             P_sqrt_next = jac @ P_sqrt[0]  # [N*D, N*D]
             # Case distinction needed to differentiate through with Q_sqrt=0
             P_sqrt_next = lax.cond(
-                jnp.any(Q_sqrt >= 1e-12), Q_add_true, Q_add_false, P_sqrt_next, Q_sqrt
+                jnp.any(Q_sqrt >= 1e-16), Q_add_true, Q_add_false, P_sqrt_next, Q_sqrt
             )  # [N*D, N*D]
-            P_sqrt_next = cov_update_fn_sqrt(P_sqrt_next, eps.ravel())[None, :, :]  # [1, N*D, N*D]
+            P_sqrt_next = lax.cond(
+                self.disable_cov_update, cov_update_false, cov_update_true, P_sqrt_next, eps
+            )  # [N*D, N*D]
 
             next_state = {
                 "t": t_next,
                 "x": x_next,
-                "P_sqrt": P_sqrt_next,
+                "P_sqrt": P_sqrt_next[None, :, :],
                 "Q_sqrt": state["Q_sqrt"],
                 "y": state["y"],
                 "y_hat": state["y_hat"],
@@ -87,13 +102,20 @@ class SQRT_EKF(FilterBuilder):
         def correct(
             measurement_fn: Callable[[Array], Array], state: Dict[str, Array]
         ) -> Dict[str, Array]:
+            K_zero_true = lambda S_sqrt, H, P_sqrt: jnp.zeros_like(H).T
+            K_zero_false = lambda S_sqrt, H, P_sqrt: (
+                jsp.linalg.cho_solve((S_sqrt, True), H) @ P_sqrt[0] @ P_sqrt[0].T
+            ).T
+
             x, P_sqrt, y, R_sqrt = state["x"], state["P_sqrt"], state["y"], state["R_sqrt"]
 
             y_hat, H = value_and_jacfwd(measurement_fn, x.ravel())  # [L], [L, N*D]
             y_delta = y - y_hat  # [L]
 
             S_sqrt = sqrt_L_sum_qr(H @ P_sqrt[0], R_sqrt)  # [L, L]
-            K = (jsp.linalg.cho_solve((S_sqrt, True), H) @ P_sqrt[0] @ P_sqrt[0].T).T  # [N*D, L]
+            K = lax.cond(
+                jnp.all(S_sqrt < 1e-16), K_zero_true, K_zero_false, S_sqrt, H, P_sqrt
+            )  # [N*D, L]
 
             x_corrected = x + (K @ y_delta).reshape(*x.shape)  # [1, N, D]
 
