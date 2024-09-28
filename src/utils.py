@@ -61,7 +61,6 @@ def store_data(data: Dict[str, Array], out_filepath: str, mode="w") -> None:
             h5f.create_dataset(k, data=v)
 
 
-@jax.jit
 def negative_log_gaussian_sqrt(x: Array, m: Array, P_sqrt: Array) -> Array:
     """
     Evaluates negative log Gaussian using pre-computed covariance square-root.
@@ -171,7 +170,6 @@ def isin_tolerance(elements: Array, test_elements: Array, tol: float) -> Array:
     return jnp.minimum(lval, rval) <= tol
 
 
-@jax.jit
 def bmmT(a: Array, b: Array) -> Array:
     """
     Computes batched matrix multiplication with second matrix transposed.
@@ -187,7 +185,6 @@ def bmmT(a: Array, b: Array) -> Array:
     return jnp.einsum("...ij,...kj->...ik", a, b)
 
 
-@jax.jit
 def sqrt_L_sum_qr(a: Array, b: Array) -> Array:
     """
     Computes lower-triangular (a+b)^(1/2), where a, b are lower-triangular matrix square-roots,
@@ -213,7 +210,6 @@ def sqrt_L_sum_qr(a: Array, b: Array) -> Array:
     return r.transpose(*t_s)
 
 
-@jax.jit
 def multivariate_normal_sqrt(x: Array, m: Array, S: Array) -> Array:
     """
     Evaluates PDF of multivariate Gaussian efficiently using pre-computed covariance square-root.
@@ -242,7 +238,6 @@ def multivariate_normal_sqrt(x: Array, m: Array, S: Array) -> Array:
     return jnp.exp(log_pdf)
 
 
-@jax.jit
 def kl_divergence_gaussian_sqrt(m_p: Array, m_q: Array, S_p: Array, S_q: Array) -> Array:
     """
     Evaluates KL divergence KL(P||Q) between pairs of Gaussians P, Q with covariance square-root.
@@ -277,7 +272,6 @@ def kl_divergence_gaussian_sqrt(m_p: Array, m_q: Array, S_p: Array, S_q: Array) 
     return 1 / 2 * (log_det_q - log_det_p - n + jnp.einsum('...i,...i->...', y, y) + tr_qp)
 
 
-@jax.jit
 def jeffrey_divergence_sqrt(m_1: Array, m_2: Array, S_1: Array, S_2: Array) -> Array:
     """Evaluates symmetric KL divergence (aka Jeffrey divergence) between pairs of Gaussians with
     covariance square-root.
