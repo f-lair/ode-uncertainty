@@ -9,5 +9,5 @@ x0: '[[1.0, 1.0, 1.0]]'
 t0: 0.0
 tN: 50.0
 noise_var: 0.0
-save_interval: 100
+save_interval: 10
 disable_pbar: false

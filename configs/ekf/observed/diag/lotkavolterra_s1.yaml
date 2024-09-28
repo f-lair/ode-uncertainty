@@ -21,8 +21,8 @@ x0: '[[1.0, 1.0]]'
 P0: null
 t0: 0.0
 tN: 20.0
-y_path: ../results/noise_gt/lotkavolterra.h5
+y_path: ../results/gt/lotkavolterra.h5
 measurement_matrix: '[[1, 0], [0, 1]]'
-obs_noise_var: 0.1
+obs_noise_var: 0.0
 save_interval: 1
 disable_pbar: false

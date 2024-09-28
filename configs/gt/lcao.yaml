@@ -13,5 +13,5 @@ x0: '[[1.0, -2.0], [-1.0, 0.5]]'
 t0: 0.0
 tN: 80.0
 noise_var: 0.0
-save_interval: 100
+save_interval: 10
 disable_pbar: false
