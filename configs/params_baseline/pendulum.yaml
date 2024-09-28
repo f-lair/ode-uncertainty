@@ -1,0 +1,27 @@
+output: ../results/params_baseline/pendulum.h5
+solver_builder: 
+  class_path: src.solvers.Dopri65
+  init_args:
+    step_size: 0.01
+ode_builder:
+  class_path: src.ode.Pendulum
+  init_args:
+    length: 1.5
+x0: '[[0.785398], [0.0]]'
+t0: 0.0
+tN: 10.0
+y_path: ../results/noise_gt/pendulum.h5
+measurement_matrix: '[[1, 0]]'
+params_range:
+  length: [0.1, 10.0]
+params_optimized:
+  length: true
+obs_noise_var: 0.1
+lbfgs_maxiter: 200
+num_random_runs: 100
+num_param_evals:
+  length: 1000
+seed: 7
+num_processes: 4
+disable_pbar: false
+verbose: false
