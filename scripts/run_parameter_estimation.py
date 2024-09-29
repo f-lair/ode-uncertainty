@@ -165,15 +165,35 @@ def optimize(
         }
         num_random_runs = 1
 
+    ode = jax.jit(ode_builder.build())
+    solver_builder.setup(ode, ode_builder.params)
+    solver = jax.jit(
+        jax.vmap(solver_builder.build_parametrized(), (None, None, 0)), static_argnums=(0,)
+    )
+    filter_predict = jax.jit(filter_builder.build_parametrized_predict(), static_argnums=(0, 1, 2))
+    filter_correct = jax.jit(filter_builder.build_correct(), static_argnums=(0,))
+    cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
+    measurement_fn = lambda x: H @ x
+    nll_p = jax.jit(
+        partial(
+            nll,
+            num_steps,
+            filter_predict,
+            filter_correct,
+            solver,
+            ode,
+            cov_update_fn,
+            measurement_fn,
+        ),
+    )
+
     optimize_run_p = partial(
         optimize_run,
-        filter_builder,
-        solver_builder,
+        nll_p,
         ode_builder,
         gamma_noise_schedule,
         params_norms,
         initial_state,
-        num_steps,
         num_tempering_steps,
         x0_arr,
         H,
@@ -397,13 +417,11 @@ def evaluate(
 
 
 def optimize_run(
-    filter_builder: FilterBuilder,
-    solver_builder: SolverBuilder,
+    nll_fn: Callable,
     ode_builder: ODEBuilder,
     gamma_noise_schedule: NoiseSchedule,
     params_norms: Dict[str, Array],
     initial_state: Dict[str, Array],
-    num_steps: int,
     num_tempering_steps: int,
     x0: Array,
     H: Array,
@@ -421,13 +439,11 @@ def optimize_run(
     Performs a single optimization run.
 
     Args:
-        filter_builder (FilterBuilder): ODE filter builder.
-        solver_builder (SolverBuilder): ODE solver builder.
+        nll_fn (Callable): NLL function.
         ode_builder (ODEBuilder): ODE builder.
         gamma_noise_schedule (NoiseSchedule): Noise schedule used for tempering.
         params_norms (Dict[str, Array]): Normed parameters.
         initial_state (Dict[str, Array]): Initial state.
-        num_steps (int): Number of steps.
         num_tempering_steps (int): Number of tempering steps.
         x0 (Array): Initial value.
         H (Array): Measurement matrix.
@@ -449,35 +465,12 @@ def optimize_run(
             number of LBFGS iterations.
     """
 
-    ode = jax.jit(ode_builder.build())
-    solver_builder.setup(ode, ode_builder.params)
-    solver = jax.jit(
-        jax.vmap(solver_builder.build_parametrized(), (None, None, 0)), static_argnums=(0,)
-    )
-    filter_predict = jax.jit(filter_builder.build_parametrized_predict(), static_argnums=(0, 1, 2))
-    filter_correct = jax.jit(filter_builder.build_correct(), static_argnums=(0,))
-    cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
-    measurement_fn = lambda x: H @ x
-
     params_norms_reduced = {k: v for k, v in params_norms.items() if params_optimized[k]}
     params_min_reduced = {k: v for k, v in params_min.items() if params_optimized[k]}
     params_max_reduced = {k: v for k, v in params_max.items() if params_optimized[k]}
     params_optimized_indices = jnp.flatnonzero(ravel_pytree(params_optimized)[0])
 
-    nll_p = jax.jit(
-        partial(
-            nll,
-            num_steps,
-            filter_predict,
-            filter_correct,
-            solver,
-            ode,
-            cov_update_fn,
-            measurement_fn,
-        ),
-    )
-
-    lbfgsb = ScipyBoundedMinimize(fun=nll_p, method="L-BFGS-B", maxiter=lbfgs_maxiter, jit=True)
+    lbfgsb = ScipyBoundedMinimize(fun=nll_fn, method="L-BFGS-B", maxiter=lbfgs_maxiter, jit=True)
     bounds = ({k: 0.0 for k in params_norms_reduced}, {k: 1.0 for k in params_norms_reduced})
 
     params_norm_reduced = {k: params_norms_reduced[k][run_idx] for k in params_norms_reduced}

@@ -145,15 +145,28 @@ def optimize(
         }
         num_random_runs = 1
 
+    ode = jax.jit(ode_builder.build())
+    solver_builder.setup(ode, ode_builder.params)
+    solver = jax.jit(solver_builder.build_parametrized(), static_argnums=(0,))
+    measurement_fn = lambda x: H @ x
+
+    nll_p = jax.jit(
+        partial(
+            nll,
+            num_steps,
+            solver,
+            ode,
+            measurement_fn,
+        ),
+    )
+
     optimize_run_p = partial(
         optimize_run,
-        solver_builder,
+        nll_p,
         ode_builder,
         params_norms,
         initial_state,
-        num_steps,
         x0_arr,
-        H,
         ys,
         R_sqrt,
         x_flags,
@@ -340,13 +353,11 @@ def evaluate(
 
 
 def optimize_run(
-    solver_builder: SolverBuilder,
+    nll_fn: Callable,
     ode_builder: ODEBuilder,
     params_norms: Dict[str, Array],
     initial_state: Dict[str, Array],
-    num_steps: int,
     x0: Array,
-    H: Array,
     ys: Array,
     R_sqrt: Array,
     correct_flags: Array,
@@ -362,13 +373,11 @@ def optimize_run(
     Performs a single optimization run.
 
     Args:
-        solver_builder (SolverBuilder): ODE solver builder.
+        nll_fn (Callable): NLL function.
         ode_builder (ODEBuilder): ODE builder.
         params_norms (Dict[str, Array]): Normed parameters.
         initial_state (Dict[str, Array]): Initial state.
-        num_steps (int): Number of steps.
         x0 (Array): Initial value.
-        H (Array): Measurement matrix.
         ys (Array): Observations.
         R_sqrt (Array): Observatation noise.
         correct_flags (Array): Flags indicating availability of observations.
@@ -388,27 +397,12 @@ def optimize_run(
             number of LBFGS iterations.
     """
 
-    ode = jax.jit(ode_builder.build())
-    solver_builder.setup(ode, ode_builder.params)
-    solver = jax.jit(solver_builder.build_parametrized(), static_argnums=(0,))
-    measurement_fn = lambda x: H @ x
-
     params_norms_reduced = {k: v for k, v in params_norms.items() if params_optimized[k]}
     params_min_reduced = {k: v for k, v in params_min.items() if params_optimized[k]}
     params_max_reduced = {k: v for k, v in params_max.items() if params_optimized[k]}
     params_optimized_indices = jnp.flatnonzero(ravel_pytree(params_optimized)[0])
 
-    nll_p = jax.jit(
-        partial(
-            nll,
-            num_steps,
-            solver,
-            ode,
-            measurement_fn,
-        ),
-    )
-
-    lbfgsb = ScipyBoundedMinimize(fun=nll_p, method="L-BFGS-B", maxiter=lbfgs_maxiter, jit=True)
+    lbfgsb = ScipyBoundedMinimize(fun=nll_fn, method="L-BFGS-B", maxiter=lbfgs_maxiter, jit=True)
     bounds = ({k: 0.0 for k in params_norms_reduced}, {k: 1.0 for k in params_norms_reduced})
 
     params_norm = {k: params_norms[k][run_idx] for k in params_norms}
