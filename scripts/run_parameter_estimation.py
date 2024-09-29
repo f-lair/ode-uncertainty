@@ -480,7 +480,6 @@ def optimize_run(
     lbfgsb = ScipyBoundedMinimize(fun=nll_p, method="L-BFGS-B", maxiter=lbfgs_maxiter, jit=True)
     bounds = ({k: 0.0 for k in params_norms_reduced}, {k: 1.0 for k in params_norms_reduced})
 
-    params_norm = {k: params_norms[k][run_idx] for k in params_norms}
     params_norm_reduced = {k: params_norms_reduced[k][run_idx] for k in params_norms_reduced}
     params_init_reduced = ravel_pytree(
         inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced)
@@ -500,10 +499,16 @@ def optimize_run(
             gamma = jnp.zeros(())
         initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5)
 
+        params_reduced = inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced)
+        params_reduced_flat, _ = ravel_pytree(params_reduced)
+        default_params_flat, unravel_fn = ravel_pytree(ode_builder.params)
+        params = unravel_fn(
+            default_params_flat.at[params_optimized_indices].set(
+                params_reduced_flat, indices_are_sorted=True, unique_indices=True
+            )
+        )
         initial_state["x"] = jnp.broadcast_to(
-            ode_builder.build_initial_value(
-                x0, inv_normalize(params_norm, params_min, params_max)  # type: ignore
-            ),
+            ode_builder.build_initial_value(x0, params),  # type: ignore
             initial_state["x"].shape,
         )
 
