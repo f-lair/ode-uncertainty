@@ -11,6 +11,7 @@ sys.path.append("../")
 jax.config.update("jax_enable_x64", True)
 
 import h5py
+import multiprocess
 from jax import Array, lax
 from jax import numpy as jnp
 from jax import random
@@ -178,14 +179,21 @@ def optimize(
         verbose,
     )
 
-    results = p_umap(
-        optimize_run_p,
-        range(num_random_runs),
-        num_cpus=num_processes,
-        desc="Runs",
-        disable=disable_pbar,
-    )
+    if num_random_runs > 1:
+        results = p_umap(
+            optimize_run_p,
+            range(num_random_runs),
+            num_cpus=num_processes,
+            desc="Runs",
+            disable=disable_pbar,
+        )
+    else:
+        results = [optimize_run_p(0)]
 
+    params_default, unravel_fn = ravel_pytree(
+        {k: v for k, v in ode_builder.params.items() if params_optimized_arr[k]}
+    )
+    params_name = list(unravel_fn(params_default).keys())
     params_inits, params_optims, nll_optims, num_lbfgs_iters = zip(*results)
     params_inits = jnp.stack(params_inits)
     params_optims = jnp.stack(params_optims)
@@ -194,6 +202,8 @@ def optimize(
     results = {
         "params_inits": params_inits,
         "params_optims": params_optims,
+        "params_default": params_default,
+        "params_name": params_name,
         "nll_optims": nll_optims,
         "num_lbfgs_iters": num_lbfgs_iters,
     }
@@ -528,4 +538,5 @@ def nll(
 
 
 if __name__ == "__main__":
+    multiprocess.set_start_method("spawn")  # type: ignore
     CLI([optimize, evaluate], as_positional=False)
