@@ -78,7 +78,7 @@ num_param_evals:
   E_Ca: 1
   g_T: 1
   V_x: 1
-seed: 7
+seed: 4
 num_processes: 4
 disable_pbar: false
 verbose: false

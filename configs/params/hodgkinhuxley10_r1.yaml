@@ -1,4 +1,12 @@
-output: ../results/params_baseline/hodgkinhuxley2_r4.h5
+output: ../results/params/hodgkinhuxley10_r1.h5
+filter_builder:
+  class_path: src.filters.SQRT_EKF
+  init_args:
+    cov_update_fn_builder:
+      class_path: src.covariance_update_functions.DiagonalCovarianceUpdate
+      init_args:
+        scale: 1.0
+    disable_cov_update: true
 solver_builder:
   class_path: src.solvers.Dopri65
   init_args:
@@ -6,7 +14,7 @@ solver_builder:
 ode_builder:
   class_path: src.ode.HodgkinHuxley
   init_args:
-    model: reduced-4
+    model: reduced-1
     C: 1.0
     A: 8.3e-05
     g_Na: 25.0
@@ -23,10 +31,11 @@ ode_builder:
     g_T: 0.0
     V_x: 2.0
 x0: '[[-70.0]]'
+P0: null
 t0: 0.0
 tN: 100.0
-y_path: ../results/noise_gt/hodgkinhuxley_r4.h5
-measurement_matrix: '[[1, 0, 0, 0]]'
+y_path: ../results/noise_gt/hodgkinhuxley_r1.h5
+measurement_matrix: '[[1, 0, 0, 0, 0, 0, 0]]'
 params_range:
   C: [0.4, 3.0]
   A: [1.9e-05, 30.2e-05]
@@ -47,27 +56,33 @@ params_optimized:
   C: false
   A: false
   g_Na: true
-  E_Na: false
+  E_Na: true
   g_K: true
-  E_K: false
-  g_leak: false
-  E_leak: false
-  V_T: false
-  g_M: false
+  E_K: true
+  g_leak: true
+  E_leak: true
+  V_T: true
+  g_M: true
   tau_max: false
-  g_L: false
-  E_Ca: false
+  g_L: true
+  E_Ca: true
   g_T: false
   V_x: false
+num_tempering_steps: 7
 obs_noise_var: 0.1
-lbfgs_maxiter: 200
-num_random_runs: 100
+gamma_noise_schedule:
+  class_path: src.noise_schedules.ExponentialDecaySchedule
+  init_args:
+    init_noise_log: -2.0
+    decay_rate: 10.0
+lbfgs_maxiter: 400
+num_random_runs: 4
 num_param_evals:
   C: 1
   A: 1
-  g_Na: 50
+  g_Na: 1
   E_Na: 1
-  g_K: 50
+  g_K: 1
   E_K: 1
   g_leak: 1
   E_leak: 1
@@ -78,7 +93,7 @@ num_param_evals:
   E_Ca: 1
   g_T: 1
   V_x: 1
-seed: 5
+seed: 10
 num_processes: 4
 disable_pbar: false
 verbose: false
