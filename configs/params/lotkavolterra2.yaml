@@ -34,14 +34,14 @@ params_optimized:
   beta: true
   gamma: false
   delta: false
-num_tempering_steps: 4
+num_tempering_steps: 3
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.CosineAnnealingSchedule
   init_args:
-    init_noise_log: -3.2
+    init_noise_log: -2.0
     min_noise_log: -8.0
-    cycle_length: 2
+    cycle_length: 3
 lbfgs_maxiter: 200
 num_random_runs: 100
 num_param_evals:

@@ -6,7 +6,7 @@ solver_builder:
 ode_builder:
   class_path: src.ode.Pendulum
   init_args:
-    length: 1.5
+    length: 3.0
 x0: '[[0.785398], [0.0]]'
 t0: 0.0
 tN: 10.0
