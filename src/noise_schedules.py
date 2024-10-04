@@ -88,3 +88,43 @@ class ExponentialDecaySchedule(NoiseSchedule):
         """
 
         return jnp.pow(10, self.init_noise_log - self.decay_rate * jnp.log10(idx + 1))
+
+
+class CosineAnnealingSchedule(NoiseSchedule):
+    """Cosine annealing noise schedule."""
+
+    def __init__(
+        self, init_noise_log: float = 0.0, min_noise_log: float = -10.0, cycle_length: int = 4
+    ) -> None:
+        """
+        Initializes noise schedule.
+
+        Args:
+            init_noise_log (float, optional): Initial log_10 noise covariance. Defaults to 0.0.
+            min_noise_log (float, optional): Minimum log_10 noise covariance. Defaults to -10.0.
+            cycle_length (int, optional): Cycle length. Defaults to 4.
+        """
+
+        super().__init__(init_noise_log)
+        self.min_noise_log = min_noise_log
+        self.cycle_length = cycle_length
+
+    def step(self, idx: int) -> Array:
+        """
+        Performs step in noise schedule.
+
+        Args:
+            idx (int): Step index.
+
+        Returns:
+            Array: Noise covariance [].
+        """
+
+        idx_in_cycle = idx % self.cycle_length
+        return jnp.pow(
+            10,
+            self.min_noise_log
+            + 0.5
+            * (self.init_noise_log - self.min_noise_log)
+            * (1.0 + jnp.cos(idx_in_cycle / (self.cycle_length - 1) * jnp.pi)),
+        )
