@@ -194,11 +194,15 @@ def optimize(
         {k: v for k, v in ode_builder.params.items() if params_optimized_arr[k]}
     )
     params_name = list(unravel_fn(params_default).keys())
-    params_inits, params_optims, nll_optims, num_lbfgs_iters = zip(*results)
+    params_inits, params_optims, nll_optims, num_lbfgs_iters, num_nll_evals, num_nll_jac_evals = (
+        zip(*results)
+    )
     params_inits = jnp.stack(params_inits)
     params_optims = jnp.stack(params_optims)
     nll_optims = jnp.stack(nll_optims)
     num_lbfgs_iters = jnp.stack(num_lbfgs_iters)
+    num_nll_evals = jnp.stack(num_nll_evals)
+    num_nll_jac_evals = jnp.stack(num_nll_jac_evals)
     results = {
         "params_inits": params_inits,
         "params_optims": params_optims,
@@ -206,6 +210,8 @@ def optimize(
         "params_name": params_name,
         "nll_optims": nll_optims,
         "num_lbfgs_iters": num_lbfgs_iters,
+        "num_nll_evals": num_nll_evals,
+        "num_nll_jac_evals": num_nll_jac_evals,
     }
 
     store_data(results, output, mode="a")
@@ -378,7 +384,7 @@ def optimize_run(
     lbfgs_maxiter: int,
     verbose: bool,
     run_idx: int,
-) -> Tuple[Array, Array, Array, Array]:
+) -> Tuple[Array, Array, Array, Array, Array, Array]:
     """
     Performs a single optimization run.
 
@@ -404,7 +410,9 @@ def optimize_run(
             Initial parameters,
             optimized parameters,
             NLL value,
-            number of LBFGS iterations.
+            number of LBFGS iterations
+            number of NLL evaluations,
+            number of NLL Jacobian evaluations.
     """
 
     params_norms_reduced = {k: v for k, v in params_norms.items() if params_optimized[k]}
@@ -459,8 +467,17 @@ def optimize_run(
     params_optim_reduced = ravel_pytree(params_optim_reduced)[0]
     nll_optim = lbfgsb_state.fun_val
     num_lbfgs_iters = lbfgsb_state.iter_num
+    num_nll_evals = lbfgsb_state.num_fun_eval
+    num_nll_jac_evals = lbfgsb_state.num_jac_eval
 
-    return params_init_reduced, params_optim_reduced, nll_optim, num_lbfgs_iters
+    return (
+        params_init_reduced,
+        params_optim_reduced,
+        nll_optim,
+        num_lbfgs_iters,
+        num_nll_evals,
+        num_nll_jac_evals,
+    )
 
 
 @partial(jax.jit, static_argnums=(0, 1, 2, 3))
