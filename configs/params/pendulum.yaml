@@ -25,13 +25,14 @@ params_range:
   length: [0.1, 10.0]
 params_optimized:
   length: true
-num_tempering_steps: 6
+num_tempering_steps: 4
 obs_noise_var: 0.1
 gamma_noise_schedule:
-  class_path: src.noise_schedules.ExponentialDecaySchedule
+  class_path: src.noise_schedules.CosineAnnealingSchedule
   init_args:
-    init_noise_log: -1.0
-    decay_rate: 10.0
+    init_noise_log: -3.2
+    min_noise_log: -8.0
+    cycle_length: 2
 lbfgs_maxiter: 200
 num_random_runs: 100
 num_param_evals:
