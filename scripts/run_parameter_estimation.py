@@ -164,7 +164,11 @@ def optimize(
                     normalize(
                         ode_builder.params[k][
                             tuple(0 for _ in range(ode_builder.params[k].ndim - 1))
-                            + (slice(0, ode_builder.params[k].shape[-1]),)
+                            + (
+                                (slice(0, ode_builder.params[k].shape[-1]),)
+                                if ode_builder.params[k].ndim > 0
+                                else tuple()
+                            )
                         ],
                         params_min[k],
                         params_max[k],
@@ -181,7 +185,11 @@ def optimize(
             k: normalize(
                 ode_builder.params[k][
                     tuple(0 for _ in range(ode_builder.params[k].ndim - 1))
-                    + (slice(0, ode_builder.params[k].shape[-1]),)
+                    + (
+                        (slice(0, ode_builder.params[k].shape[-1]),)
+                        if ode_builder.params[k].ndim > 0
+                        else tuple()
+                    )
                 ],
                 params_min[k],
                 params_max[k],
@@ -407,7 +415,11 @@ def evaluate(
     initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
 
     param_eval_arr = [
-        jnp.linspace(params_min[k][idx], params_max[k][idx], num_param_evals[k])
+        (
+            jnp.linspace(params_min[k][idx], params_max[k][idx], num_param_evals[k])
+            if ode_builder.params[k].ndim > 0
+            else jnp.linspace(params_min[k], params_max[k], num_param_evals[k])
+        )
         for k in sorted(ode_builder.params)
         for idx in range(ode_builder.params[k].size)
     ]
