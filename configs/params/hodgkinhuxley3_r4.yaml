@@ -68,18 +68,17 @@ params_optimized:
   E_Ca: false
   g_T: false
   V_x: false
-num_tempering_steps: 3
+num_tempering_stages: 3
 obs_noise_var: 0.1
 gamma_noise_schedule:
-  class_path: src.noise_schedules.CosineAnnealingSchedule
+  class_path: src.noise_schedules.LinearDecaySchedule
   init_args:
     init_noise_log: -2.0
-    min_noise_log: -8.0
-    cycle_length: 3
+    decay_rate: 3
 lbfgs_maxiter: 200
 num_random_runs: 100
 num_param_evals:
-  C: 1
+  C: 1000
   A: 1
   g_Na: 1
   E_Na: 1

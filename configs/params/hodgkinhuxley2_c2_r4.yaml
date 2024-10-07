@@ -1,4 +1,4 @@
-output: ../results/params/hodgkinhuxley10_r1.h5
+output: ../results/params/hodgkinhuxley2_c2_r4.h5
 filter_builder:
   class_path: src.filters.SQRT_EKF
   init_args:
@@ -12,31 +12,34 @@ solver_builder:
   init_args:
     step_size: 0.01
 ode_builder:
-  class_path: src.ode.HodgkinHuxley
+  class_path: src.ode.MultiCompartmentHodgkinHuxley
   init_args:
-    model: reduced-1
+    model: reduced-4
+    num_compartments: 2
+    coupling_coeffs: '[1.0]'
     C: 1.0
-    A: 8.3e-05
-    g_Na: 25.0
-    E_Na: 53.0
-    g_K: 7.0
-    E_K: -107.0
-    g_leak: 0.1
-    E_leak: -70.0
-    V_T: -60.0
-    g_M: 0.01
-    tau_max: 4000.0
-    g_L: 0.01
-    E_Ca: 120.0
-    g_T: 0.0
-    V_x: 2.0
-x0: '[[-70.0]]'
+    A: '[4.15e-5, 4.15e-5]'
+    g_Na: '[25.0, 20.0]'
+    E_Na: '[53.0, 53.0]'
+    g_K: '[7.0, 10.0]'
+    E_K: '[-107.0, -107.0]'
+    g_leak: '[0.09, 0.11]'
+    E_leak: '[-70.0, -70.0]'
+    V_T: '[-60.0, -60.0]'
+    g_M: '[0.01, 0.01]'
+    tau_max: '[4e3, 4e3]'
+    g_L: '[0.01, 0.01]'
+    E_Ca: '[120.0, 120.0]'
+    g_T: '[0.0, 0.0]'
+    V_x: '[2.0, 2.0]'
+x0: '[[-70.0, -70.0]]'
 P0: null
 t0: 0.0
 tN: 100.0
-y_path: ../results/noise_gt/hodgkinhuxley_r1.h5
-measurement_matrix: '[[1, 0, 0, 0, 0, 0, 0]]'
+y_path: ../results/noise_gt/hodgkinhuxley_c2_r4.h5
+measurement_matrix: '[[1, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 1, 0, 0, 0]]'
 params_range:
+  coupling_coeffs: [1.0, 1.0]
   C: [0.4, 3.0]
   A: [1.9e-05, 30.2e-05]
   g_Na: [0.5, 80.0]
@@ -53,19 +56,20 @@ params_range:
   g_T: [-1.0e-04, 0.6]
   V_x: [0.0, 4.0]
 params_optimized:
+  coupling_coeffs: false
   C: false
   A: false
   g_Na: true
-  E_Na: true
+  E_Na: false
   g_K: true
-  E_K: true
-  g_leak: true
-  E_leak: true
-  V_T: true
-  g_M: true
+  E_K: false
+  g_leak: false
+  E_leak: false
+  V_T: false
+  g_M: false
   tau_max: false
-  g_L: true
-  E_Ca: true
+  g_L: false
+  E_Ca: false
   g_T: false
   V_x: false
 num_tempering_stages: 3
@@ -75,9 +79,10 @@ gamma_noise_schedule:
   init_args:
     init_noise_log: -2.0
     decay_rate: 3
-lbfgs_maxiter: 400
-num_random_runs: 4
+lbfgs_maxiter: 200
+num_random_runs: 20
 num_param_evals:
+  coupling_coeffs: 1
   C: 1000
   A: 1
   g_Na: 1
@@ -93,7 +98,7 @@ num_param_evals:
   E_Ca: 1
   g_T: 1
   V_x: 1
-seed: 10
+seed: 6
 num_processes: 4
 disable_pbar: false
 verbose: false
