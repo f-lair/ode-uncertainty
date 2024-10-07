@@ -158,7 +158,9 @@ def optimize(
         prng_key = random.split(random.key(seed), len(ode_builder.params))
         params_norms = {
             k: (
-                random.uniform(prng_key[idx], shape=(num_random_runs, ode_builder.params[k].size))
+                random.uniform(
+                    prng_key[idx], shape=(num_random_runs,) + ode_builder.params[k].shape[-1:]
+                )
                 if params_optimized[k]
                 else jnp.broadcast_to(
                     normalize(
@@ -175,7 +177,7 @@ def optimize(
                     )[
                         None
                     ],  # type: ignore
-                    (num_random_runs, ode_builder.params[k].shape[-1]),
+                    (num_random_runs,) + ode_builder.params[k].shape[-1:],
                 )
             )
             for idx, k in enumerate(ode_builder.params.keys())
@@ -552,8 +554,8 @@ def optimize_run(
 
     lbfgsb = ScipyBoundedMinimize(fun=nll_fn, method="L-BFGS-B", maxiter=lbfgs_maxiter, jit=True)
     bounds = (
-        {k: jnp.zeros_like(v) for k, v in params_norms_reduced.items()},
-        {k: jnp.ones_like(v) for k, v in params_norms_reduced.items()},
+        {k: jnp.zeros_like(v[run_idx]) for k, v in params_norms_reduced.items()},
+        {k: jnp.ones_like(v[run_idx]) for k, v in params_norms_reduced.items()},
     )
 
     params_norm_reduced = {k: params_norms_reduced[k][run_idx] for k in params_norms_reduced}
