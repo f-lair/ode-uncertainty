@@ -15,7 +15,12 @@ class ODEBuilder:
         Initializes ODE builder.
         """
 
-        self.params = {k: jnp.array(v) for k, v in kwargs.items() if isinstance(v, float)}
+        self.params = {}
+        for k, v in kwargs.items():
+            if isinstance(v, Array):
+                self.params[k] = v
+            elif isinstance(v, float):
+                self.params[k] = jnp.array(v)
 
     def build(self) -> ODE:
         """

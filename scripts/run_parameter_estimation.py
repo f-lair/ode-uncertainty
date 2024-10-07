@@ -1,8 +1,10 @@
+import itertools
 import math
 import sys
 from ast import literal_eval
 from copy import deepcopy
 from functools import partial
+from time import perf_counter_ns
 from typing import Callable, Dict, Tuple
 
 import jax
@@ -55,7 +57,7 @@ def optimize(
     measurement_matrix: str | None = None,
     params_range: Dict[str, Tuple[float, float]] | None = None,
     params_optimized: Dict[str, bool] | None = None,
-    num_tempering_steps: int = 10,
+    num_tempering_stages: int = 10,
     obs_noise_var: float = 0.1,
     gamma_noise_schedule: NoiseSchedule = ExponentialDecaySchedule(),
     lbfgs_maxiter: int = 200,
@@ -85,7 +87,7 @@ def optimize(
         measurement_matrix (str | None, optional): Measurement matrix [L, N*D]. Defaults to None.
         params_range (Dict[str, Tuple[float, float]] | None, optional): Parameter range. Defaults to None.
         params_optimized (Dict[str, bool] | None, optional): Parameters to be optimized. Defaults to None.
-        num_tempering_steps (int, optional): Number of tempering steps. Defaults to 10.
+        num_tempering_stages (int, optional): Number of tempering stages. Defaults to 10.
         obs_noise_var (float, optional): Observation noise variance. Defaults to 0.1.
         gamma_noise_schedule (NoiseSchedule, optional): Noise schedule used for tempering. Defaults to ExponentialDecaySchedule().
         lbfgs_maxiter (int, optional): Max number of LBFGS iterations per tempering stage. Defaults to 200.
@@ -99,7 +101,7 @@ def optimize(
 
     t0_arr = jnp.array([t0])
     x0_arr = jnp.array([literal_eval(x0)])
-    x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
+    x0_arr_built = ode_builder.build_initial_value(x0_arr[0], ode_builder.params)[None]
     P0_sqrt_arr = (
         const_diag(x0_arr_built.size, 1e-12)[None, :, :]
         if P0 is None
@@ -133,9 +135,15 @@ def optimize(
     assert H.shape[1] == P0_sqrt_arr.shape[-1], "Invalid measurement matrix!"
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
-    params_min = {k: jnp.array(v[0]) for k, v in params_range.items()}
-    params_max = {k: jnp.array(v[1]) for k, v in params_range.items()}
-    params_optimized_arr = {k: jnp.array(v) for k, v in params_optimized.items()}
+    params_min = {
+        k: jnp.full(ode_builder.params[k].shape[-1:], v[0]) for k, v in params_range.items()
+    }
+    params_max = {
+        k: jnp.full(ode_builder.params[k].shape[-1:], v[1]) for k, v in params_range.items()
+    }
+    params_optimized_arr = {
+        k: jnp.full(ode_builder.params[k].shape[-1:], v) for k, v in params_optimized.items()
+    }
     assert len(params_min) == len(ode_builder.params), "Invalid parameter ranges!"
     assert len(params_max) == len(ode_builder.params), "Invalid parameter ranges!"
     assert len(params_optimized) == len(ode_builder.params), "Invalid optimization flags!"
@@ -150,18 +158,36 @@ def optimize(
         prng_key = random.split(random.key(seed), len(ode_builder.params))
         params_norms = {
             k: (
-                random.uniform(prng_key[idx], shape=(num_random_runs,))
+                random.uniform(prng_key[idx], shape=(num_random_runs, ode_builder.params[k].size))
                 if params_optimized[k]
                 else jnp.broadcast_to(
-                    normalize(ode_builder.params[k], params_min[k], params_max[k])[None],  # type: ignore
-                    (num_random_runs,),
+                    normalize(
+                        ode_builder.params[k][
+                            tuple(0 for _ in range(ode_builder.params[k].ndim - 1))
+                            + (slice(0, ode_builder.params[k].shape[-1]),)
+                        ],
+                        params_min[k],
+                        params_max[k],
+                    )[
+                        None
+                    ],  # type: ignore
+                    (num_random_runs, ode_builder.params[k].shape[-1]),
                 )
             )
             for idx, k in enumerate(ode_builder.params.keys())
         }
     else:
         params_norms = {
-            k: normalize(ode_builder.params[k], params_min[k], params_max[k])[None]  # type: ignore
+            k: normalize(
+                ode_builder.params[k][
+                    tuple(0 for _ in range(ode_builder.params[k].ndim - 1))
+                    + (slice(0, ode_builder.params[k].shape[-1]),)
+                ],
+                params_min[k],
+                params_max[k],
+            )[
+                None
+            ]  # type: ignore
             for k in ode_builder.params
         }
         num_random_runs = 1
@@ -195,7 +221,7 @@ def optimize(
         gamma_noise_schedule,
         params_norms,
         initial_state,
-        num_tempering_steps,
+        num_tempering_stages,
         x0_arr,
         H,
         ys,
@@ -220,9 +246,17 @@ def optimize(
         results = [optimize_run_p(0)]
 
     params_default, unravel_fn = ravel_pytree(
-        {k: v for k, v in ode_builder.params.items() if params_optimized_arr[k]}
+        {k: v for k, v in ode_builder.params.items() if params_optimized[k]}
     )
-    params_name = list(unravel_fn(params_default).keys())
+    params_name = list(
+        itertools.chain(
+            *[
+                [param_name] * ode_builder.params[param_name].size
+                for param_name in unravel_fn(params_default).keys()
+            ]
+        )
+    )
+
     params_inits, params_optims, nll_optims, num_lbfgs_iters, num_nll_evals, num_nll_jac_evals = (
         zip(*results)
     )
@@ -259,7 +293,7 @@ def evaluate(
     measurement_matrix: str | None = None,
     params_range: Dict[str, Tuple[float, float]] | None = None,
     params_optimized: Dict[str, bool] | None = None,
-    num_tempering_steps: int = 10,
+    num_tempering_stages: int = 10,
     obs_noise_var: float = 0.1,
     gamma_noise_schedule: NoiseSchedule = ExponentialDecaySchedule(),
     lbfgs_maxiter: int = 200,
@@ -289,7 +323,7 @@ def evaluate(
         measurement_matrix (str | None, optional): Measurement matrix [L, N*D]. Defaults to None.
         params_range (Dict[str, Tuple[float, float]] | None, optional): Parameter range. Defaults to None.
         params_optimized (Dict[str, bool] | None, optional): Parameters to be optimized. Defaults to None.
-        num_tempering_steps (int, optional): Number of tempering steps. Defaults to 10.
+        num_tempering_stages (int, optional): Number of tempering stages. Defaults to 10.
         obs_noise_var (float, optional): Observation noise variance. Defaults to 0.1.
         gamma_noise_schedule (NoiseSchedule, optional): Noise schedule used for tempering. Defaults to ExponentialDecaySchedule().
         lbfgs_maxiter (int, optional): Max number of LBFGS iterations per tempering stage (unused). Defaults to 200.
@@ -303,7 +337,9 @@ def evaluate(
 
     t0_arr = jnp.array([t0])
     x0_arr = jnp.array([literal_eval(x0)])
-    x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
+    x0_arr_built = x0_arr_built = ode_builder.build_initial_value(x0_arr[0], ode_builder.params)[
+        None
+    ]
     P0_sqrt_arr = (
         const_diag(x0_arr_built.size, 1e-12)[None, :, :]
         if P0 is None
@@ -349,11 +385,17 @@ def evaluate(
     measurement_fn = lambda x: H @ x
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
-    params_min = {k: jnp.array(v[0]) for k, v in params_range.items()}
-    params_max = {k: jnp.array(v[1]) for k, v in params_range.items()}
+    params_min = {
+        k: jnp.full(ode_builder.params[k].shape[-1:], v[0]) for k, v in params_range.items()
+    }
+    params_max = {
+        k: jnp.full(ode_builder.params[k].shape[-1:], v[1]) for k, v in params_range.items()
+    }
     params_min_reduced = {k: v for k, v in params_min.items() if params_optimized[k]}
     params_max_reduced = {k: v for k, v in params_max.items() if params_optimized[k]}
-    params_optimized_arr = {k: jnp.array(v) for k, v in params_optimized.items()}
+    params_optimized_arr = {
+        k: jnp.full(ode_builder.params[k].shape[-1:], v) for k, v in params_optimized.items()
+    }
     params_optimized_indices = jnp.flatnonzero(ravel_pytree(params_optimized_arr)[0])
     assert len(params_min) == len(ode_builder.params), "Invalid parameter ranges!"
     assert len(params_max) == len(ode_builder.params), "Invalid parameter ranges!"
@@ -365,11 +407,13 @@ def evaluate(
     initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
 
     param_eval_arr = [
-        jnp.linspace(params_min[k], params_max[k], num_param_evals[k])
+        jnp.linspace(params_min[k][idx], params_max[k][idx], num_param_evals[k])
         for k in sorted(ode_builder.params)
+        for idx in range(ode_builder.params[k].size)
     ]
+
     param_eval_arr = jnp.stack(jnp.meshgrid(*param_eval_arr, indexing="ij"), axis=-1).reshape(
-        -1, len(ode_builder.params)
+        -1, len(param_eval_arr)
     )
     _, unravel_fn = ravel_pytree(ode_builder.params)
 
@@ -387,8 +431,9 @@ def evaluate(
     )
     nll_evals = []
     gammas = []
+    timings = []
     for tempering_idx in trange(
-        0, num_tempering_steps, desc=f"Tempering stages", disable=disable_pbar
+        0, num_tempering_stages, desc=f"Tempering stages", disable=disable_pbar
     ):
         gamma = gamma_noise_schedule.step(tempering_idx)
         initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5)
@@ -399,11 +444,12 @@ def evaluate(
         for eval_idx in trange(param_eval_arr.shape[0], desc=f"Evaluations", disable=disable_pbar):
             params_reg = unravel_fn(param_eval_arr[eval_idx])
             initial_state["x"] = jnp.broadcast_to(
-                ode_builder.build_initial_value(x0_arr, params_reg),
+                ode_builder.build_initial_value(x0_arr[0], params_reg)[None],
                 initial_state["x"].shape,
             )
             params_norm = normalize(params_reg, params_min, params_max)
             params_norm_reduced = {k: v for k, v in params_norm.items() if params_optimized[k]}  # type: ignore
+            t1 = perf_counter_ns()
             nll_eval = nll_p(
                 params_norm_reduced,
                 deepcopy(initial_state),
@@ -415,16 +461,22 @@ def evaluate(
                 params_optimized_indices,
                 ode_builder.params,
             )
+            t2 = perf_counter_ns()
             nll_evals[-1].append(nll_eval)  # type: ignore
+            if not (tempering_idx == 0 and eval_idx == 0):
+                timings.append(t2 - t1)  # type: ignore
+
         nll_evals[-1] = jnp.stack(nll_evals[-1])
 
     nll_evals = jnp.stack(nll_evals)
+    timings = jnp.stack(timings)
 
     gammas = jnp.stack(gammas)
     results = {
         "param_evals": param_eval_arr[:, params_optimized_indices],
         "nll_evals": nll_evals,
         "gammas": gammas,
+        "timings": timings,
     }
 
     store_data(results, output, mode="a")
@@ -436,7 +488,7 @@ def optimize_run(
     gamma_noise_schedule: NoiseSchedule,
     params_norms: Dict[str, Array],
     initial_state: Dict[str, Array],
-    num_tempering_steps: int,
+    num_tempering_stages: int,
     x0: Array,
     H: Array,
     ys: Array,
@@ -458,7 +510,7 @@ def optimize_run(
         gamma_noise_schedule (NoiseSchedule): Noise schedule used for tempering.
         params_norms (Dict[str, Array]): Normed parameters.
         initial_state (Dict[str, Array]): Initial state.
-        num_tempering_steps (int): Number of tempering steps.
+        num_tempering_stages (int): Number of tempering stages.
         x0 (Array): Initial value.
         H (Array): Measurement matrix.
         ys (Array): Observations.
@@ -481,13 +533,16 @@ def optimize_run(
             number of NLL Jacobian evaluations.
     """
 
-    params_norms_reduced = {k: v for k, v in params_norms.items() if params_optimized[k]}
-    params_min_reduced = {k: v for k, v in params_min.items() if params_optimized[k]}
-    params_max_reduced = {k: v for k, v in params_max.items() if params_optimized[k]}
+    params_norms_reduced = {k: v for k, v in params_norms.items() if params_optimized[k].any()}
+    params_min_reduced = {k: v for k, v in params_min.items() if params_optimized[k].any()}
+    params_max_reduced = {k: v for k, v in params_max.items() if params_optimized[k].any()}
     params_optimized_indices = jnp.flatnonzero(ravel_pytree(params_optimized)[0])
 
     lbfgsb = ScipyBoundedMinimize(fun=nll_fn, method="L-BFGS-B", maxiter=lbfgs_maxiter, jit=True)
-    bounds = ({k: 0.0 for k in params_norms_reduced}, {k: 1.0 for k in params_norms_reduced})
+    bounds = (
+        {k: jnp.zeros_like(v) for k, v in params_norms_reduced.items()},
+        {k: jnp.ones_like(v) for k, v in params_norms_reduced.items()},
+    )
 
     params_norm_reduced = {k: params_norms_reduced[k][run_idx] for k in params_norms_reduced}
     params_init_reduced = ravel_pytree(
@@ -504,7 +559,7 @@ def optimize_run(
             "\nParameters [0]:",
             inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced),
         )
-    for tempering_idx in range(0, num_tempering_steps):
+    for tempering_idx in range(0, num_tempering_stages):
         gamma = gamma_noise_schedule.step(tempering_idx)
         initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5)
 
@@ -517,7 +572,7 @@ def optimize_run(
             )
         )
         initial_state["x"] = jnp.broadcast_to(
-            ode_builder.build_initial_value(x0, params),  # type: ignore
+            ode_builder.build_initial_value(x0[0], params)[None],  # type: ignore
             initial_state["x"].shape,
         )
 

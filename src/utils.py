@@ -191,23 +191,20 @@ def sqrt_L_sum_qr(a: Array, b: Array) -> Array:
     using QR decomposition.
 
     Args:
-        a (Array): Lower-triangular matrix square-root [..., N, N].
-        b (Array): Lower-triangular matrix square-root [..., N, N].
+        a (Array): Lower-triangular matrix square-root [N, N].
+        b (Array): Lower-triangular matrix square-root [N, N].
 
     Returns:
-        Array: Lower-triangular matrix square-root [..., N, N].
+        Array: Lower-triangular matrix square-root [N, N].
     """
 
-    t_s = tuple(range(a.ndim - 2)) + (a.ndim - 1, a.ndim - 2)
-    a_b, b_b = jnp.broadcast_arrays(a, b)
-
     r = jsp.linalg.qr(
-        jnp.concatenate([a_b.transpose(*t_s), b_b.transpose(*t_s)], axis=-2),
+        jnp.concatenate([a.T, b.T], axis=-2),
         mode="economic",
     )[
         1
     ]  # [..., N, N]
-    return r.transpose(*t_s)
+    return r.T
 
 
 def multivariate_normal_sqrt(x: Array, m: Array, S: Array) -> Array:
