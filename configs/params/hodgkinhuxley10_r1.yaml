@@ -6,7 +6,7 @@ filter_builder:
       class_path: src.covariance_update_functions.DiagonalCovarianceUpdate
       init_args:
         scale: 1.0
-    disable_cov_update: true
+    disable_cov_update: false
 solver_builder:
   class_path: src.solvers.Dopri65
   init_args:
@@ -68,7 +68,7 @@ params_optimized:
   E_Ca: true
   g_T: false
   V_x: false
-num_tempering_stages: 3
+num_tempering_stages: 4
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.LinearDecaySchedule

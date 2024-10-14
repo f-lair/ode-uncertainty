@@ -59,11 +59,34 @@ class SQRT_EKF(FilterBuilder):
         def predict(
             solver: Solver, cov_update_fn_sqrt: CovarianceUpdateFunction, state: Dict[str, Array]
         ) -> Dict[str, Array]:
-            Q_add_true = lambda P_sqrt_next, Q_sqrt: sqrt_L_sum_qr(P_sqrt_next, Q_sqrt)
-            Q_add_false = lambda P_sqrt_next, Q_sqrt: P_sqrt_next
+            cov_update_false_Q_add_true = lambda P_sqrt_next, Q_sqrt, eps: sqrt_L_sum_qr(
+                P_sqrt_next, Q_sqrt
+            )
+            cov_update_false_Q_add_false = lambda P_sqrt_next, Q_sqrt, eps: P_sqrt_next
+            cov_update_true_Q_add_true = lambda P_sqrt_next, Q_sqrt, eps: sqrt_L_sum_qr(
+                P_sqrt_next, cov_update_fn_sqrt(Q_sqrt, jnp.diag(Q_sqrt) * eps.ravel())
+            )
+            cov_update_true_Q_add_false = lambda P_sqrt_next, Q_sqrt, eps: cov_update_fn_sqrt(
+                P_sqrt_next, eps.ravel()
+            )
 
-            cov_update_true = lambda P_sqrt_next, eps: cov_update_fn_sqrt(P_sqrt_next, eps.ravel())
-            cov_update_false = lambda P_sqrt_next, eps: P_sqrt_next
+            cov_update_true = lambda P_sqrt_next, Q_sqrt, eps: lax.cond(
+                jnp.any(Q_sqrt >= 1e-16),
+                cov_update_true_Q_add_true,
+                cov_update_true_Q_add_false,
+                P_sqrt_next,
+                Q_sqrt,
+                eps,
+            )
+
+            cov_update_false = lambda P_sqrt_next, Q_sqrt, eps: lax.cond(
+                jnp.any(Q_sqrt >= 1e-16),
+                cov_update_false_Q_add_true,
+                cov_update_false_Q_add_false,
+                P_sqrt_next,
+                Q_sqrt,
+                eps,
+            )
 
             t, x, P_sqrt, Q_sqrt = state["t"], state["x"], state["P_sqrt"], state["Q_sqrt"]
             solver_state = {"t": t, "x": x}
@@ -76,12 +99,13 @@ class SQRT_EKF(FilterBuilder):
             jac = solver_jacs["x"]["x"].reshape(x.size, x.size)  # [N*D, N*D]
 
             P_sqrt_next = jac @ P_sqrt[0]  # [N*D, N*D]
-            # Case distinction needed to differentiate through with Q_sqrt=0
             P_sqrt_next = lax.cond(
-                jnp.any(Q_sqrt >= 1e-16), Q_add_true, Q_add_false, P_sqrt_next, Q_sqrt
-            )  # [N*D, N*D]
-            P_sqrt_next = lax.cond(
-                self.disable_cov_update, cov_update_false, cov_update_true, P_sqrt_next, eps
+                self.disable_cov_update,
+                cov_update_false,
+                cov_update_true,
+                P_sqrt_next,
+                Q_sqrt,
+                eps,
             )  # [N*D, N*D]
 
             next_state = {

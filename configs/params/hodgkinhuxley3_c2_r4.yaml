@@ -6,7 +6,7 @@ filter_builder:
       class_path: src.covariance_update_functions.DiagonalCovarianceUpdate
       init_args:
         scale: 1.0
-    disable_cov_update: true
+    disable_cov_update: false
 solver_builder:
   class_path: src.solvers.Dopri65
   init_args:
