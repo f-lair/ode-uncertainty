@@ -6,7 +6,7 @@ filter_builder:
       class_path: src.covariance_update_functions.DiagonalCovarianceUpdate
       init_args:
         scale: 1.0
-    disable_cov_update: false
+    disable_cov_update: true
 solver_builder:
   class_path: src.solvers.Dopri65
   init_args:
@@ -79,11 +79,12 @@ gamma_noise_schedule:
   init_args:
     init_noise_log: -2.0
     decay_rate: 3
+gamma_noise_weights: '[4, 0, 0, 0, 4, 0, 0, 0]'
 lbfgs_maxiter: 200
-num_random_runs: 20
+num_random_runs: 100
 num_param_evals:
   coupling_coeffs: 1
-  C: 1000
+  C: 1
   A: 1
   g_Na: 1
   E_Na: 1

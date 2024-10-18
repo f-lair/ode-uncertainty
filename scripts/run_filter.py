@@ -68,7 +68,7 @@ def main(
 
     t0_arr = jnp.array([t0])
     x0_arr = jnp.array([literal_eval(x0)])
-    x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
+    x0_arr_built = ode_builder.build_initial_value(x0_arr[0], ode_builder.params)
     P0_sqrt_arr = (
         const_diag(x0_arr_built.size, 1e-12)[None, :, :]
         if P0 is None

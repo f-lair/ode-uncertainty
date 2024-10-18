@@ -44,6 +44,7 @@ class SQRT_EKF(FilterBuilder):
         return {
             "t": (1,),
             "x": (1, N, D),
+            "eps": (1, N, D),
             "P_sqrt": (1, N * D, N * D),
             "Q_sqrt": (N * D, N * D),
             "y": (L,),
@@ -64,7 +65,7 @@ class SQRT_EKF(FilterBuilder):
             )
             cov_update_false_Q_add_false = lambda P_sqrt_next, Q_sqrt, eps: P_sqrt_next
             cov_update_true_Q_add_true = lambda P_sqrt_next, Q_sqrt, eps: sqrt_L_sum_qr(
-                P_sqrt_next, cov_update_fn_sqrt(Q_sqrt, jnp.diag(Q_sqrt) * eps.ravel())
+                cov_update_fn_sqrt(P_sqrt_next, eps.ravel()), Q_sqrt
             )
             cov_update_true_Q_add_false = lambda P_sqrt_next, Q_sqrt, eps: cov_update_fn_sqrt(
                 P_sqrt_next, eps.ravel()
@@ -111,6 +112,7 @@ class SQRT_EKF(FilterBuilder):
             next_state = {
                 "t": t_next,
                 "x": x_next,
+                "eps": eps,
                 "P_sqrt": P_sqrt_next[None, :, :],
                 "Q_sqrt": state["Q_sqrt"],
                 "y": state["y"],
@@ -150,6 +152,7 @@ class SQRT_EKF(FilterBuilder):
             next_state = {
                 "t": state["t"],
                 "x": x_corrected,
+                "eps": state["eps"],
                 "P_sqrt": P_sqrt_corrected,
                 "Q_sqrt": state["Q_sqrt"],
                 "y": state["y"],

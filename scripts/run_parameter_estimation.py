@@ -60,6 +60,7 @@ def optimize(
     num_tempering_stages: int = 10,
     obs_noise_var: float = 0.1,
     gamma_noise_schedule: NoiseSchedule = ExponentialDecaySchedule(),
+    gamma_noise_weights: str | None = None,
     lbfgs_maxiter: int = 200,
     num_random_runs: int = 0,
     num_param_evals: Dict[str, int] | None = None,
@@ -90,6 +91,7 @@ def optimize(
         num_tempering_stages (int, optional): Number of tempering stages. Defaults to 10.
         obs_noise_var (float, optional): Observation noise variance. Defaults to 0.1.
         gamma_noise_schedule (NoiseSchedule, optional): Noise schedule used for tempering. Defaults to ExponentialDecaySchedule().
+        gamma_noise_weights (str | None, optional): Gamma noise weight vector [N*D]. Defaults to None.
         lbfgs_maxiter (int, optional): Max number of LBFGS iterations per tempering stage. Defaults to 200.
         num_random_runs (int, optional): Number of random runs. Defaults to 0.
         num_param_evals (Dict[str, int] | None, optional): Number of evaluations per parameter (unused). Defaults to None.
@@ -115,6 +117,8 @@ def optimize(
         raise ValueError("Observation data is required!")
     if measurement_matrix is None:
         raise ValueError("Measurement matrix is required!")
+    if gamma_noise_weights is None:
+        raise ValueError("Gamma noise weight vector is required!")
     if params_range is None:
         raise ValueError("Parameter ranges are required!")
     if params_optimized is None:
@@ -134,6 +138,9 @@ def optimize(
     L = H.shape[0]
     assert H.shape[1] == P0_sqrt_arr.shape[-1], "Invalid measurement matrix!"
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
+
+    w = jnp.array(literal_eval(gamma_noise_weights))
+    assert w.shape[0] == P0_sqrt_arr.shape[-1], "Invalid gamma noise weight vector!"
 
     params_min = {
         k: jnp.full(ode_builder.params[k].shape[-1:], v[0]) for k, v in params_range.items()
@@ -235,6 +242,7 @@ def optimize(
         x0_arr,
         H,
         ys,
+        w,
         x_flags,
         xy_index_map,
         params_min,
@@ -306,6 +314,7 @@ def evaluate(
     num_tempering_stages: int = 10,
     obs_noise_var: float = 0.1,
     gamma_noise_schedule: NoiseSchedule = ExponentialDecaySchedule(),
+    gamma_noise_weights: str | None = None,
     lbfgs_maxiter: int = 200,
     num_random_runs: int = 0,
     num_param_evals: Dict[str, int] | None = None,
@@ -336,6 +345,7 @@ def evaluate(
         num_tempering_stages (int, optional): Number of tempering stages. Defaults to 10.
         obs_noise_var (float, optional): Observation noise variance. Defaults to 0.1.
         gamma_noise_schedule (NoiseSchedule, optional): Noise schedule used for tempering. Defaults to ExponentialDecaySchedule().
+        gamma_noise_weights (str | None, optional): Gamma noise weight vector [N*D]. Defaults to None.
         lbfgs_maxiter (int, optional): Max number of LBFGS iterations per tempering stage (unused). Defaults to 200.
         num_random_runs (int, optional): Number of random runs (unused). Defaults to 0.
         num_param_evals (Dict[str, int] | None, optional): Number of evaluations per parameter. Defaults to None.
@@ -372,6 +382,8 @@ def evaluate(
         raise ValueError("Observation data is required!")
     if measurement_matrix is None:
         raise ValueError("Measurement matrix is required!")
+    if gamma_noise_weights is None:
+        raise ValueError("Gamma noise weight vector is required!")
     if params_range is None:
         raise ValueError("Parameter ranges are required!")
     if params_optimized is None:
@@ -394,6 +406,9 @@ def evaluate(
     assert H.shape[1] == P0_sqrt_arr.shape[-1], "Invalid measurement matrix!"
     measurement_fn = lambda x: H @ x
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
+
+    w = jnp.array(literal_eval(gamma_noise_weights))
+    assert w.shape[0] == P0_sqrt_arr.shape[-1], "Invalid gamma noise weight vector!"
 
     params_min = {
         k: jnp.full(ode_builder.params[k].shape[-1:], v[0]) for k, v in params_range.items()
@@ -450,7 +465,7 @@ def evaluate(
         0, num_tempering_stages, desc=f"Tempering stages", disable=disable_pbar
     ):
         gamma = gamma_noise_schedule.step(tempering_idx)
-        initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5)
+        initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5) * w
 
         nll_evals.append([])
         gammas.append(gamma)
@@ -506,6 +521,7 @@ def optimize_run(
     x0: Array,
     H: Array,
     ys: Array,
+    w: Array,
     correct_flags: Array,
     xy_index_map: Array,
     params_min: Dict[str, Array],
@@ -528,6 +544,7 @@ def optimize_run(
         x0 (Array): Initial value.
         H (Array): Measurement matrix.
         ys (Array): Observations.
+        w (Array): Gamma noise weight vector.
         correct_flags (Array): Flags indicating availability of observations.
         index_map (Array): Prediction -> observation index map.
         params_min (Dict[str, Array]): Minimum values per parameter.
@@ -575,7 +592,7 @@ def optimize_run(
         )
     for tempering_idx in range(0, num_tempering_stages):
         gamma = gamma_noise_schedule.step(tempering_idx)
-        initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5)
+        initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5) * w
 
         params_reduced = inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced)
         params_reduced_flat, _ = ravel_pytree(params_reduced)
