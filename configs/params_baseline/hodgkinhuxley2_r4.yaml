@@ -1,8 +1,9 @@
 output: ../results/params_baseline/hodgkinhuxley2_r4.h5
-solver_builder:
-  class_path: src.solvers.Dopri65
+solver_builder: 
+  class_path: src.solvers.DiffraxSolverBuilder
   init_args:
-    step_size: 0.01
+    name: Kvaerno3
+    step_size: 0.0001
 ode_builder:
   class_path: src.ode.HodgkinHuxley
   init_args:
@@ -78,7 +79,7 @@ num_param_evals:
   E_Ca: 1
   g_T: 1
   V_x: 1
-seed: 5
+seed: 24
 num_processes: 4
 disable_pbar: false
 verbose: false

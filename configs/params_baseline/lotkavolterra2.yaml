@@ -1,8 +1,9 @@
 output: ../results/params_baseline/lotkavolterra2.h5
 solver_builder: 
-  class_path: src.solvers.Dopri65
+  class_path: src.solvers.DiffraxSolverBuilder
   init_args:
-    step_size: 0.01
+    name: Kvaerno3
+    step_size: 0.0001
 ode_builder:
   class_path: src.ode.LotkaVolterra
   init_args:
@@ -33,7 +34,7 @@ num_param_evals:
   beta: 50
   gamma: 1
   delta: 1
-seed: 7
+seed: 2
 num_processes: 4
 disable_pbar: false
 verbose: false

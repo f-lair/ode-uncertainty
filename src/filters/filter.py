@@ -21,9 +21,9 @@ ParametrizedFilterPredict = Callable[
     [ParametrizedSolver, CovarianceUpdateFunction, ODE, Dict[str, Array], Dict[str, Array]],
     Dict[str, Array],
 ]
-# FilterCorrect::(Callable[[Array], Array]:measurement_fn, Dict[str, Array]:state) ->
+# FilterCorrect::(Array:measurement_matrix, Dict[str, Array]:state) ->
 # (Dict[str, Array]:next_state)
-FilterCorrect = Callable[[Callable[[Array], Array], Dict[str, Array]], Dict[str, Array]]
+FilterCorrect = Callable[[Array, Dict[str, Array]], Dict[str, Array]]
 
 
 class FilterBuilder:
@@ -34,23 +34,21 @@ class FilterBuilder:
     ) -> None:
         self.cov_update_fn_builder = cov_update_fn_builder
 
-    def state_def(self, N: int, D: int, L: int) -> Dict[str, Tuple[int, ...]]:
+    def init_state(self, solver_state: Dict[str, Array], *args) -> Dict[str, Array]:
         """
-        Defines the solver state.
+        Initializes the filter state.
+        D: Latent dimension.
+        N: ODE order.
 
         Args:
-            N (int): ODE order.
-            D (int): Latent dimension.
-            L (int): Measurement dimension.
-
-        Raises:
-            NotImplementedError: Needs to be defined for a concrete filter.
+            t0 (Array): Initial time [].
+            x0 (Array): Initial state [N, D].
 
         Returns:
-            Dict[str, Tuple[int, ...]]: State definition.
+            Dict[str, Array]: Initial state.
         """
 
-        raise NotImplementedError
+        return solver_state.copy()
 
     def build_cov_update_fn(self) -> CovarianceUpdateFunction:
         """

@@ -1,9 +1,9 @@
-from typing import Dict, Tuple
+from typing import Dict
 
 import jax
 from jax import Array
 from jax import numpy as jnp
-from jax import random
+from jax import random, tree
 
 from src.covariance_update_functions import DiagonalCovarianceUpdate
 from src.covariance_update_functions.covariance_update_function import (
@@ -25,20 +25,36 @@ class ParticleFilter(FilterBuilder):
         super().__init__(cov_update_fn_builder)
         self.M = num_particles
 
-    def state_def(self, N: int, D: int, L: int) -> Dict[str, Tuple[int, ...]]:
+    def init_state(self, solver_state: Dict[str, Array], prng_key: Array) -> Dict[str, Array]:
         """
-        Defines the solver state.
+        Initializes the filter state.
+        D: Latent dimension.
+        N: ODE order.
 
         Args:
-            N (int): ODE order.
-            D (int): Latent dimension.
-            L (int): Measurement dimension.
+            t0 (Array): Initial time [].
+            x0 (Array): Initial state [N, D].
 
         Returns:
-            Dict[str, Tuple[int, ...]]: State definition.
+            Dict[str, Array]: Initial state.
         """
 
-        return {"t": (self.M,), "x": (self.M, N, D), "Q": (N * D, N * D), "prng_key": ()}
+        filter_state = super().init_state(solver_state)
+
+        filter_state["t"] = jnp.broadcast_to(filter_state["t"][None], (self.M))
+        filter_state["x"] = jnp.broadcast_to(
+            filter_state["x"][None, :, :], (self.M,) + filter_state["x"].shape
+        )
+        filter_state["eps"] = jnp.broadcast_to(
+            filter_state["eps"][None, :, :], (self.M,) + filter_state["eps"].shape
+        )
+        filter_state["diffrax_state"] = tree.map(
+            lambda _x: jnp.broadcast_to(_x[None, ...], (self.M,) + _x.shape),
+            filter_state["diffrax_state"],
+        )
+        filter_state["prng_key"] = prng_key
+
+        return filter_state
 
     def build_cov_update_fn(self) -> CovarianceUpdateFunction:
         return jax.vmap(self.cov_update_fn_builder.build())
@@ -47,8 +63,13 @@ class ParticleFilter(FilterBuilder):
         def predict(
             solver: Solver, cov_update_fn: CovarianceUpdateFunction, state: Dict[str, Array]
         ) -> Dict[str, Array]:
-            t, x, Q, prng_key = state["t"], state["x"], state["Q"], state["prng_key"]
-            solver_state = {"t": t, "x": x}
+            t, x, diffrax_state, prng_key = (
+                state["t"],
+                state["x"],
+                state["diffrax_state"],
+                state["prng_key"],
+            )
+            solver_state = {"t": t, "x": x, "diffrax_state": diffrax_state}
             M, N, D = x.shape
             prng_key, prng_key_next = random.split(prng_key)
 
@@ -56,13 +77,15 @@ class ParticleFilter(FilterBuilder):
             t_next = next_solver_state["t"]  # [M]
             x_next = next_solver_state["x"]  # [M, N, D]
             eps = next_solver_state["eps"]  # [M, N, D]
+            diffrax_state_next = next_solver_state["diffrax_state"]
 
             p = (
                 random.multivariate_normal(
                     prng_key,
                     jnp.zeros((M, N * D)),
                     cov_update_fn(
-                        jnp.broadcast_to(Q[None, :, :], (M, N * D, N * D)), eps.reshape(M, N * D)
+                        jnp.zeros((M, N * D, N * D)),
+                        eps.reshape(M, N * D),
                     ),
                     method="svd",
                 )
@@ -75,7 +98,8 @@ class ParticleFilter(FilterBuilder):
             next_state = {
                 "t": t_next,
                 "x": x_next,
-                "Q": state["Q"],
+                "eps": eps,
+                "diffrax_state": diffrax_state_next,
                 "prng_key": prng_key_next,
             }
             return next_state

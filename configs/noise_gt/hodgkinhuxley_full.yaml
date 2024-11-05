@@ -1,7 +1,8 @@
 output: ../results/noise_gt/hodgkinhuxley_full.h5
-solver_builder:
-  class_path: src.solvers.Dopri65
+solver_builder: 
+  class_path: src.solvers.DiffraxSolverBuilder
   init_args:
+    name: Kvaerno3
     step_size: 0.0001
 ode_builder:
   class_path: src.ode.HodgkinHuxley
@@ -20,7 +21,7 @@ ode_builder:
     tau_max: 4000.0
     g_L: 0.01
     E_Ca: 120.0
-    g_T: 0.0
+    g_T: 0.01
     V_x: 2.0
 x0: '[[-70.0]]'
 t0: 0.0

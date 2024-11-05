@@ -8,9 +8,10 @@ filter_builder:
         scale: 1.0
     disable_cov_update: true
 solver_builder: 
-  class_path: src.solvers.Dopri65
+  class_path: src.solvers.DiffraxSolverBuilder
   init_args:
-    step_size: 0.01
+    name: Kvaerno3
+    step_size: 0.0001
 ode_builder:
   class_path: src.ode.LotkaVolterra
   init_args:
@@ -45,11 +46,11 @@ gamma_noise_weights: '[1, 1]'
 lbfgs_maxiter: 200
 num_random_runs: 100
 num_param_evals:
-  alpha: 1
+  alpha: 100
   beta: 1
   gamma: 1
   delta: 1
-seed: 42
+seed: 4
 num_processes: 4
 disable_pbar: false
 verbose: false

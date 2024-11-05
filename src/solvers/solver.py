@@ -1,6 +1,7 @@
 from typing import Callable, Dict, Set, Tuple
 
 from jax import Array
+from jax import numpy as jnp
 
 from src.ode.ode import ODE
 
@@ -31,19 +32,21 @@ class SolverBuilder:
 
         pass
 
-    def state_def(self, N: int, D: int) -> Dict[str, Tuple[int, ...]]:
+    def init_state(self, t0: Array, x0: Array) -> Dict[str, Array]:
         """
-        Defines the solver state.
+        Initializes the solver state.
+        D: Latent dimension.
+        N: ODE order.
 
         Args:
-            N (int): ODE order.
-            D (int): Latent dimension.
+            t0 (Array): Initial time [].
+            x0 (Array): Initial state [N, D].
 
         Returns:
-            Dict[str, Tuple[int, ...]]: State definition.
+            Dict[str, Array]: Initial state.
         """
 
-        return {"t": (), "x": (N, D), "eps": (N, D)}
+        return {"t": t0, "x": x0, "eps": jnp.zeros_like(x0), "diffrax_state": jnp.zeros(())}
 
     def build(self) -> Solver:
         """

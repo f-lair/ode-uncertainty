@@ -1,7 +1,8 @@
 output: ../results/noise_gt/hodgkinhuxley_r4.h5
-solver_builder:
-  class_path: src.solvers.Dopri65
+solver_builder: 
+  class_path: src.solvers.DiffraxSolverBuilder
   init_args:
+    name: Kvaerno3
     step_size: 0.0001
 ode_builder:
   class_path: src.ode.HodgkinHuxley

@@ -33,7 +33,7 @@ p_inf = lambda V: 1.0 / (1.0 + jnp.exp(-(V + 35.0) / 10.0))
 q_inf = lambda V: 1.0 / (1.0 + b_q(V) / a_q(V))
 r_inf = lambda V: 1.0 / (1.0 + b_r(V) / a_r(V))
 s_inf = lambda V, V_x: 1.0 / (1.0 + jnp.exp(-(V + V_x + 57.0) / 6.2))
-u_inf = lambda V, V_x: 1.0 / (1.0 + jnp.exp(-(V + V_x + 81.0) / 4.0))
+u_inf = lambda V, V_x: 1.0 / (1.0 + jnp.exp((V + V_x + 81.0) / 4.0))
 # differential functions
 f_m = lambda V, m, V_T: a_m(V, V_T) * (1 - m) - b_m(V, V_T) * m
 f_h = lambda V, h, V_T: a_h(V, V_T) * (1 - h) - b_h(V, V_T) * h
@@ -77,7 +77,7 @@ class HodgkinHuxley(ODEBuilder):
         tau_max: float = 4e3,
         g_L: float = 0.01,
         E_Ca: float = 120.0,
-        g_T: float = 0.0,
+        g_T: float = 0.01,
         V_x: float = 2.0,
     ) -> None:
         """
@@ -98,7 +98,7 @@ class HodgkinHuxley(ODEBuilder):
             tau_max (float, optional): Time constant of slow K+ current. Defaults to 4e3.
             g_L (float, optional): Max high threshold Ca conductance. Defaults to 0.01.
             E_Ca (float, optional): Ca reversal potential. Defaults to 120.0.
-            g_T (float, optional): Low threshold Ca conductance. Defaults to 0.0.
+            g_T (float, optional): Low threshold Ca conductance. Defaults to 0.01.
             V_x (float, optional): Uniform shift of the voltage dependence. Defaults to 2.0.
         """
 
@@ -302,7 +302,7 @@ class MultiCompartmentHodgkinHuxley(ODEBuilder):
         tau_max: str = "[4e3, 4e3]",
         g_L: str = "[0.01, 0.01]",
         E_Ca: str = "[120.0, 120.0]",
-        g_T: str = "[0.0, 0.0]",
+        g_T: str = "[0.01, 0.01]",
         V_x: str = "[2.0, 2.0]",
     ) -> None:
         """
@@ -325,7 +325,7 @@ class MultiCompartmentHodgkinHuxley(ODEBuilder):
             tau_max (float, optional): Time constant of slow K+ current. Defaults to 4e3.
             g_L (float, optional): Max high threshold Ca conductance. Defaults to 0.01.
             E_Ca (float, optional): Ca reversal potential. Defaults to 120.0.
-            g_T (float, optional): Low threshold Ca conductance. Defaults to 0.0.
+            g_T (float, optional): Low threshold Ca conductance. Defaults to 0.01.
             V_x (float, optional): Uniform shift of the voltage dependence. Defaults to 2.0.
         """
 

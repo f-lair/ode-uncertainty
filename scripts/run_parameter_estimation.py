@@ -39,6 +39,7 @@ from src.utils import (
     inv_normalize,
     negative_log_gaussian_sqrt,
     normalize,
+    run_lbfgs_projected,
     store_data,
     sync_times,
 )
@@ -58,6 +59,7 @@ def optimize(
     params_range: Dict[str, Tuple[float, float]] | None = None,
     params_optimized: Dict[str, bool] | None = None,
     num_tempering_stages: int = 10,
+    final_gamma_zero: bool = True,
     obs_noise_var: float = 0.1,
     gamma_noise_schedule: NoiseSchedule = ExponentialDecaySchedule(),
     gamma_noise_weights: str | None = None,
@@ -101,13 +103,13 @@ def optimize(
         verbose (bool, optional): Activates verbose output. Defaults to False.
     """
 
-    t0_arr = jnp.array([t0])
-    x0_arr = jnp.array([literal_eval(x0)])
-    x0_arr_built = ode_builder.build_initial_value(x0_arr[0], ode_builder.params)[None]
+    t0_arr = jnp.array(t0)
+    x0_arr = jnp.array(literal_eval(x0))
+    x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
     P0_sqrt_arr = (
-        const_diag(x0_arr_built.size, 1e-12)[None, :, :]
+        const_diag(x0_arr_built.size, 1e-12)
         if P0 is None
-        else jnp.linalg.cholesky(jnp.array(literal_eval(P0)))[None, :, :]
+        else jnp.linalg.cholesky(jnp.array(literal_eval(P0)))
     )
 
     step_size = solver_builder.h
@@ -134,12 +136,12 @@ def optimize(
         xy_index_map = xy_index_map.at[x_indices].set(y_indices)
         ys = jnp.asarray(h5f["x"])
 
-    H = jnp.array(literal_eval(measurement_matrix))
+    H = jnp.array(literal_eval(measurement_matrix), dtype=float)
     L = H.shape[0]
     assert H.shape[1] == P0_sqrt_arr.shape[-1], "Invalid measurement matrix!"
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
-    w = jnp.array(literal_eval(gamma_noise_weights))
+    w = jnp.array(literal_eval(gamma_noise_weights), dtype=float)
     assert w.shape[0] == P0_sqrt_arr.shape[-1], "Invalid gamma noise weight vector!"
 
     params_min = {
@@ -155,11 +157,16 @@ def optimize(
     assert len(params_max) == len(ode_builder.params), "Invalid parameter ranges!"
     assert len(params_optimized) == len(ode_builder.params), "Invalid optimization flags!"
 
-    state_def = filter_builder.state_def(x0_arr_built.shape[-2], x0_arr_built.shape[-1], L)
-    initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
-    initial_state["t"] = jnp.broadcast_to(t0_arr, initial_state["t"].shape)
-    initial_state["P_sqrt"] = jnp.broadcast_to(P0_sqrt_arr, initial_state["P_sqrt"].shape)
-    initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
+    ode = jax.jit(ode_builder.build())
+    solver_builder.setup(ode, ode_builder.params)
+    solver_state = solver_builder.init_state(t0_arr, x0_arr_built)
+    initial_state = filter_builder.init_state(
+        solver_state,
+        P0_sqrt_arr,
+        jnp.zeros_like(P0_sqrt_arr),
+        jnp.zeros(()),
+        const_diag(L, obs_noise_var**0.5),
+    )
 
     if num_random_runs > 0:
         prng_key = random.split(random.key(seed), len(ode_builder.params))
@@ -209,15 +216,12 @@ def optimize(
         }
         num_random_runs = 1
 
-    ode = jax.jit(ode_builder.build())
-    solver_builder.setup(ode, ode_builder.params)
     solver = jax.jit(
         jax.vmap(solver_builder.build_parametrized(), (None, None, 0)), static_argnums=(0,)
     )
     filter_predict = jax.jit(filter_builder.build_parametrized_predict(), static_argnums=(0, 1, 2))
-    filter_correct = jax.jit(filter_builder.build_correct(), static_argnums=(0,))
+    filter_correct = jax.jit(filter_builder.build_correct())
     cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
-    measurement_fn = lambda x: H @ x
     nll_p = jax.jit(
         partial(
             nll,
@@ -227,7 +231,6 @@ def optimize(
             solver,
             ode,
             cov_update_fn,
-            measurement_fn,
         ),
     )
 
@@ -239,6 +242,7 @@ def optimize(
         params_norms,
         initial_state,
         num_tempering_stages,
+        final_gamma_zero,
         x0_arr,
         H,
         ys,
@@ -312,6 +316,7 @@ def evaluate(
     params_range: Dict[str, Tuple[float, float]] | None = None,
     params_optimized: Dict[str, bool] | None = None,
     num_tempering_stages: int = 10,
+    final_gamma_zero: bool = True,
     obs_noise_var: float = 0.1,
     gamma_noise_schedule: NoiseSchedule = ExponentialDecaySchedule(),
     gamma_noise_weights: str | None = None,
@@ -355,25 +360,23 @@ def evaluate(
         verbose (bool, optional): Activates verbose output (unused). Defaults to False.
     """
 
-    t0_arr = jnp.array([t0])
-    x0_arr = jnp.array([literal_eval(x0)])
-    x0_arr_built = x0_arr_built = ode_builder.build_initial_value(x0_arr[0], ode_builder.params)[
-        None
-    ]
+    t0_arr = jnp.array(t0)
+    x0_arr = jnp.array(literal_eval(x0))
+    x0_arr_built = x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
     P0_sqrt_arr = (
-        const_diag(x0_arr_built.size, 1e-12)[None, :, :]
+        const_diag(x0_arr_built.size, 1e-12)
         if P0 is None
-        else jnp.linalg.cholesky(jnp.array(literal_eval(P0)))[None, :, :]
+        else jnp.linalg.cholesky(jnp.array(literal_eval(P0)))
     )
 
-    ode = ode_builder.build()
+    ode = jax.jit(ode_builder.build())
     step_size = solver_builder.h
     solver_builder.setup(ode, ode_builder.params)
     solver = jax.jit(
         jax.vmap(solver_builder.build_parametrized(), (None, None, 0)), static_argnums=(0,)
     )
     filter_predict = jax.jit(filter_builder.build_parametrized_predict(), static_argnums=(0, 1, 2))
-    filter_correct = jax.jit(filter_builder.build_correct(), static_argnums=(0,))
+    filter_correct = jax.jit(filter_builder.build_correct())
     cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
 
     num_steps = int(math.ceil((tN - t0) / step_size))
@@ -401,13 +404,12 @@ def evaluate(
         xy_index_map = xy_index_map.at[x_indices].set(y_indices)
         ys = jnp.asarray(h5f["x"])
 
-    H = jnp.array(literal_eval(measurement_matrix))
+    H = jnp.array(literal_eval(measurement_matrix), dtype=float)
     L = H.shape[0]
     assert H.shape[1] == P0_sqrt_arr.shape[-1], "Invalid measurement matrix!"
-    measurement_fn = lambda x: H @ x
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
-    w = jnp.array(literal_eval(gamma_noise_weights))
+    w = jnp.array(literal_eval(gamma_noise_weights), dtype=float)
     assert w.shape[0] == P0_sqrt_arr.shape[-1], "Invalid gamma noise weight vector!"
 
     params_min = {
@@ -425,11 +427,14 @@ def evaluate(
     assert len(params_min) == len(ode_builder.params), "Invalid parameter ranges!"
     assert len(params_max) == len(ode_builder.params), "Invalid parameter ranges!"
 
-    state_def = filter_builder.state_def(x0_arr_built.shape[-2], x0_arr_built.shape[-1], L)
-    initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
-    initial_state["t"] = jnp.broadcast_to(t0_arr, initial_state["t"].shape)
-    initial_state["P_sqrt"] = jnp.broadcast_to(P0_sqrt_arr, initial_state["P_sqrt"].shape)
-    initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
+    solver_state = solver_builder.init_state(t0_arr, x0_arr_built)
+    initial_state = filter_builder.init_state(
+        solver_state,
+        P0_sqrt_arr,
+        jnp.zeros_like(P0_sqrt_arr),
+        jnp.zeros(()),
+        const_diag(L, obs_noise_var**0.5),
+    )
 
     param_eval_arr = [
         (
@@ -455,7 +460,6 @@ def evaluate(
             solver,
             ode,
             cov_update_fn,
-            measurement_fn,
         )
     )
     nll_evals = []
@@ -465,7 +469,10 @@ def evaluate(
         0, num_tempering_stages, desc=f"Tempering stages", disable=disable_pbar
     ):
         gamma = gamma_noise_schedule.step(tempering_idx)
-        initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5) * w
+        if final_gamma_zero and tempering_idx + 1 == num_tempering_stages:
+            gamma = 0.0
+        initial_state["Q_sqrt"] = jnp.diag(w)
+        initial_state["gamma_sqrt"] = gamma**0.5
 
         nll_evals.append([])
         gammas.append(gamma)
@@ -473,7 +480,7 @@ def evaluate(
         for eval_idx in trange(param_eval_arr.shape[0], desc=f"Evaluations", disable=disable_pbar):
             params_reg = unravel_fn(param_eval_arr[eval_idx])
             initial_state["x"] = jnp.broadcast_to(
-                ode_builder.build_initial_value(x0_arr[0], params_reg)[None],
+                ode_builder.build_initial_value(x0_arr, params_reg)[None],
                 initial_state["x"].shape,
             )
             params_norm = normalize(params_reg, params_min, params_max)
@@ -482,6 +489,7 @@ def evaluate(
             nll_eval = nll_p(
                 params_norm_reduced,
                 deepcopy(initial_state),
+                H,
                 ys,
                 x_flags,
                 xy_index_map,
@@ -518,6 +526,7 @@ def optimize_run(
     params_norms: Dict[str, Array],
     initial_state: Dict[str, Array],
     num_tempering_stages: int,
+    final_gamma_zero: bool,
     x0: Array,
     H: Array,
     ys: Array,
@@ -592,7 +601,10 @@ def optimize_run(
         )
     for tempering_idx in range(0, num_tempering_stages):
         gamma = gamma_noise_schedule.step(tempering_idx)
-        initial_state["Q_sqrt"] = const_diag(H.shape[1], gamma.item() ** 0.5) * w
+        if final_gamma_zero and tempering_idx + 1 == num_tempering_stages:
+            gamma = 0.0
+        initial_state["Q_sqrt"] = jnp.diag(w)
+        initial_state["gamma_sqrt"] = gamma**0.5
 
         params_reduced = inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced)
         params_reduced_flat, _ = ravel_pytree(params_reduced)
@@ -603,7 +615,7 @@ def optimize_run(
             )
         )
         initial_state["x"] = jnp.broadcast_to(
-            ode_builder.build_initial_value(x0[0], params)[None],  # type: ignore
+            ode_builder.build_initial_value(x0, params)[None],  # type: ignore
             initial_state["x"].shape,
         )
 
@@ -611,6 +623,7 @@ def optimize_run(
             init_params=params_norm_reduced,
             bounds=bounds,
             initial_state=deepcopy(initial_state),
+            measurement_matrix=H,
             ys=ys,
             correct_flags=correct_flags,
             xy_index_map=xy_index_map,
@@ -649,7 +662,7 @@ def optimize_run(
     )
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5, 6))
+@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
 def nll(
     num_steps: int,
     filter_predict: ParametrizedFilterPredict,
@@ -657,9 +670,9 @@ def nll(
     solver: ParametrizedSolver,
     ode: ODE,
     cov_update_fn: CovarianceUpdateFunction,
-    measurement_fn: Callable[[Array], Array],
     params_norm: Dict[str, Array],
     initial_state: Dict[str, Array],
+    measurement_matrix: Array,
     ys: Array,
     correct_flags: Array,
     xy_index_map: Array,
@@ -678,9 +691,9 @@ def nll(
         solver (ParametrizedSolver): Parametrized ODE solver.
         ode (ODE): ODE RHS.
         cov_update_fn (CovarianceFunction): Covariance function.
-        measurement_fn (Callable[[Array], Array]): Measurement function.
         params_norm (Dict[str, Array]): Normalized ODE parameters.
         initial_state (Dict[str, Array]): Initial state.
+        measurement_matrix (Array): Measurement matrix.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
         index_map (Array): Prediction -> observation index map.
@@ -703,7 +716,7 @@ def nll(
     )
 
     def cond_true_correct(state: Dict[str, Array]) -> Tuple[Dict[str, Array], Array]:
-        state_corrected = filter_correct(measurement_fn, state)
+        state_corrected = filter_correct(measurement_matrix, state)
         nlg = negative_log_gaussian_sqrt(
             state_corrected["y"], state_corrected["y_hat"][0], state_corrected["S_sqrt"][0]
         )

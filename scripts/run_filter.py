@@ -66,13 +66,13 @@ def main(
         disable_pbar (bool, optional): Disables progress bar. Defaults to False.
     """
 
-    t0_arr = jnp.array([t0])
-    x0_arr = jnp.array([literal_eval(x0)])
-    x0_arr_built = ode_builder.build_initial_value(x0_arr[0], ode_builder.params)
+    t0_arr = jnp.array(t0)
+    x0_arr = jnp.array(literal_eval(x0))
+    x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
     P0_sqrt_arr = (
-        const_diag(x0_arr_built.size, 1e-12)[None, :, :]
+        const_diag(x0_arr_built.size, 1e-12)
         if P0 is None
-        else jnp.linalg.cholesky(jnp.array(literal_eval(P0)))[None, :, :]
+        else jnp.linalg.cholesky(jnp.array(literal_eval(P0)))
     )
 
     ode = ode_builder.build()
@@ -95,39 +95,52 @@ def main(
             xy_index_map = xy_index_map.at[x_indices].set(y_indices)
             ys = jnp.asarray(h5f["x"])
 
-        H = jnp.array(literal_eval(measurement_matrix))
+        H = jnp.array(literal_eval(measurement_matrix), dtype=float)
         L = H.shape[0]
         assert H.shape[1] == P0_sqrt_arr.shape[-1], "Invalid measurement matrix!"
-        measurement_fn = lambda x: H @ x
         ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
-        filter_correct = jax.jit(filter_builder.build_correct(), static_argnums=(0,))
+        filter_correct = jax.jit(filter_builder.build_correct())
     else:
         print("Prediction only")
+        H = jnp.eye(P0_sqrt_arr.shape[-1])
         L = 0
         x_flags = jnp.zeros(num_steps, dtype=bool)
         xy_index_map = jnp.zeros(num_steps, dtype=int)
         ys = jnp.zeros((1, L))
-        measurement_fn = lambda x: x
         filter_correct = lambda _, x: x
 
-    state_def = filter_builder.state_def(x0_arr_built.shape[-2], x0_arr_built.shape[-1], L)
-    initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
-    initial_state["t"] = jnp.broadcast_to(t0_arr, initial_state["t"].shape)
-    initial_state["x"] = jnp.broadcast_to(x0_arr_built, initial_state["x"].shape)
-    if "P_sqrt" in initial_state:
-        initial_state["P_sqrt"] = jnp.broadcast_to(P0_sqrt_arr, initial_state["P_sqrt"].shape)
-    if "R_sqrt" in initial_state:
-        initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
-    if "prng_key" in initial_state:
-        initial_state["prng_key"] = jax.random.key(seed)
+    # state_def = filter_builder.state_def(x0_arr_built.shape[-2], x0_arr_built.shape[-1], L)
+    # initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
+    # initial_state["t"] = jnp.broadcast_to(t0_arr, initial_state["t"].shape)
+    # initial_state["x"] = jnp.broadcast_to(x0_arr_built, initial_state["x"].shape)
+    # if "P_sqrt" in initial_state:
+    #     initial_state["P_sqrt"] = jnp.broadcast_to(P0_sqrt_arr, initial_state["P_sqrt"].shape)
+    # if "R_sqrt" in initial_state:
+    #     initial_state["R_sqrt"] = const_diag(L, obs_noise_var**0.5)
+    # if "prng_key" in initial_state:
+    #     initial_state["prng_key"] = jax.random.key(seed)
+
+    solver_state = solver_builder.init_state(t0_arr, x0_arr_built)
+    if isinstance(filter_builder, ParticleFilter):
+        initial_state = filter_builder.init_state(solver_state, jax.random.key(seed))
+    elif isinstance(filter_builder, SQRT_EKF):
+        initial_state = filter_builder.init_state(
+            solver_state,
+            P0_sqrt_arr,
+            jnp.zeros_like(P0_sqrt_arr),
+            jnp.zeros(()),
+            const_diag(L, obs_noise_var**0.5),
+        )
+    else:
+        raise ValueError("Unsupported filter builder:", type(filter_builder))
 
     traj_states = unroll(
         filter_predict,
         filter_correct,
         solver,
         cov_update_fn,
-        measurement_fn,
+        H,
         initial_state,
         ys,
         x_flags,
@@ -145,7 +158,7 @@ def unroll(
     filter_correct: FilterCorrect,
     solver: Solver,
     cov_update_fn: CovarianceUpdateFunction,
-    measurement_fn: Callable[[Array], Array],
+    measurement_matrix: Array,
     initial_state: Dict[str, Array],
     ys: Array,
     correct_flags: Array,
@@ -162,7 +175,7 @@ def unroll(
         filter_correct (FilterCorrect): Correct function of ODE filter.
         solver (Solver): ODE solver.
         cov_update_fn (CovarianceFunction): Covariance function.
-        measurement_fn (Callable[[Array], Array]): Measurement function.
+        measurement_matrix (Array): Measurement matrix.
         initial_state (Dict[str, Array]): Initial state.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
@@ -175,7 +188,7 @@ def unroll(
         Dict[str, Array]: Trajectory states.
     """
 
-    cond_true_correct = lambda state: filter_correct(measurement_fn, state)
+    cond_true_correct = lambda state: filter_correct(measurement_matrix, state)
     cond_false_correct = lambda state: state
 
     @scan_tqdm(num_steps, disable=disable_pbar)
@@ -192,6 +205,7 @@ def unroll(
         return state_corrected, state_corrected
 
     _, traj_states = lax.scan(scan_wrapper, initial_state, jnp.arange(num_steps, dtype=int))
+    del traj_states["diffrax_state"]
     traj_states = {
         k: jnp.concat([initial_state[k][None, ...], traj_states[k]])[::save_interval]
         for k in traj_states

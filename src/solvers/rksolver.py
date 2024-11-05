@@ -1,7 +1,6 @@
 from functools import partial
 from typing import Dict, Tuple
 
-import jax
 from jax import Array, lax
 from jax import numpy as jnp
 
@@ -147,7 +146,12 @@ class RKSolverBuilder(SolverBuilder):
             x_next = x[:, :, None] + self.h * (ks @ self.b.T)  # [N, D, 2]
             eps = jnp.abs((x_next[:, :, 0] - x_next[:, :, 1]))  # [N, D]
 
-            next_state = {"t": t_next, "x": x_next[:, :, 1], "eps": eps}
+            next_state = {
+                "t": t_next,
+                "x": x_next[:, :, 1],
+                "eps": eps,
+                "diffrax_state": jnp.zeros(()),
+            }
             return next_state
 
         return parametrized_solve

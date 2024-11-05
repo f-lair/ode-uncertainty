@@ -110,7 +110,7 @@ def optimize(
         xy_index_map = xy_index_map.at[x_indices].set(y_indices)
         ys = jnp.asarray(h5f["x"])
 
-    H = jnp.array(literal_eval(measurement_matrix))
+    H = jnp.array(literal_eval(measurement_matrix), dtype=float)
     L = H.shape[0]
     assert H.shape[1] == x0_arr_built.size, "Invalid measurement matrix!"
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
@@ -124,10 +124,9 @@ def optimize(
     assert len(params_max) == len(ode_builder.params), "Invalid parameter ranges!"
     assert len(params_optimized) == len(ode_builder.params), "Invalid optimization flags!"
 
-    state_def = solver_builder.state_def(*x0_arr_built.shape)
-    initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
-    initial_state["t"] = t0_arr
-    initial_state["x"] = x0_arr_built
+    ode = jax.jit(ode_builder.build())
+    solver_builder.setup(ode, ode_builder.params)
+    initial_state = solver_builder.init_state(t0_arr, x0_arr_built)
     R_sqrt = const_diag(L, obs_noise_var**0.5)
 
     if num_random_runs > 0:
@@ -178,18 +177,13 @@ def optimize(
         }
         num_random_runs = 1
 
-    ode = jax.jit(ode_builder.build())
-    solver_builder.setup(ode, ode_builder.params)
     solver = jax.jit(solver_builder.build_parametrized(), static_argnums=(0,))
-    measurement_fn = lambda x: H @ x
-
     nll_p = jax.jit(
         partial(
             nll,
             num_steps,
             solver,
             ode,
-            measurement_fn,
         ),
     )
 
@@ -200,6 +194,7 @@ def optimize(
         params_norms,
         initial_state,
         x0_arr,
+        H,
         ys,
         R_sqrt,
         x_flags,
@@ -308,7 +303,7 @@ def evaluate(
     x0_arr = jnp.array(literal_eval(x0))
     x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
 
-    ode = ode_builder.build()
+    ode = jax.jit(ode_builder.build())
     step_size = solver_builder.h
     solver_builder.setup(ode, ode_builder.params)
     solver = jax.jit(solver_builder.build_parametrized(), static_argnums=(0,))
@@ -336,10 +331,9 @@ def evaluate(
         xy_index_map = xy_index_map.at[x_indices].set(y_indices)
         ys = jnp.asarray(h5f["x"])
 
-    H = jnp.array(literal_eval(measurement_matrix))
+    H = jnp.array(literal_eval(measurement_matrix), dtype=float)
     L = H.shape[0]
     assert H.shape[1] == x0_arr_built.size, "Invalid measurement matrix!"
-    measurement_fn = lambda x: H @ x
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
     params_min = {
@@ -357,10 +351,7 @@ def evaluate(
     assert len(params_min) == len(ode_builder.params), "Invalid parameter ranges!"
     assert len(params_max) == len(ode_builder.params), "Invalid parameter ranges!"
 
-    state_def = solver_builder.state_def(*x0_arr_built.shape)
-    initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
-    initial_state["t"] = t0_arr
-    initial_state["x"] = x0_arr_built
+    initial_state = solver_builder.init_state(t0_arr, x0_arr_built)
     R_sqrt = const_diag(L, obs_noise_var**0.5)
 
     param_eval_arr = [
@@ -384,7 +375,6 @@ def evaluate(
             num_steps,
             solver,
             ode,
-            measurement_fn,
         )
     )
     nll_evals = []
@@ -402,6 +392,7 @@ def evaluate(
         nll_eval = nll_p(
             params_norm_reduced,
             deepcopy(initial_state),
+            H,
             ys,
             R_sqrt,
             x_flags,
@@ -433,6 +424,7 @@ def optimize_run(
     params_norms: Dict[str, Array],
     initial_state: Dict[str, Array],
     x0: Array,
+    H: Array,
     ys: Array,
     R_sqrt: Array,
     correct_flags: Array,
@@ -453,6 +445,7 @@ def optimize_run(
         params_norms (Dict[str, Array]): Normed parameters.
         initial_state (Dict[str, Array]): Initial state.
         x0 (Array): Initial value.
+        H (Array): Measurement matrix.
         ys (Array): Observations.
         R_sqrt (Array): Observatation noise.
         correct_flags (Array): Flags indicating availability of observations.
@@ -508,6 +501,7 @@ def optimize_run(
         init_params=params_norm_reduced,
         bounds=bounds,
         initial_state=deepcopy(initial_state),
+        measurement_matrix=H,
         ys=ys,
         R_sqrt=R_sqrt,
         correct_flags=correct_flags,
@@ -542,14 +536,14 @@ def optimize_run(
     )
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2, 3))
+@partial(jax.jit, static_argnums=(0, 1, 2))
 def nll(
     num_steps: int,
     solver: ParametrizedSolver,
     ode: ODE,
-    measurement_fn: Callable[[Array], Array],
     params_norm: Dict[str, Array],
     initial_state: Dict[str, Array],
+    measurement_matrix: Array,
     ys: Array,
     R_sqrt: Array,
     correct_flags: Array,
@@ -566,9 +560,9 @@ def nll(
         num_steps (int): Number of steps.
         solver (ParametrizedSolver): Parametrized ODE solver.
         ode (ODE): ODE RHS.
-        measurement_fn (Callable[[Array], Array]): Measurement function.
         params_norm (Dict[str, Array]): Normalized ODE parameters.
         initial_state (Dict[str, Array]): Initial state.
+        measurement_matrix (Array): Measurement matrix.
         ys (Array): Observations.
         R_sqrt (Array): Measurement noise.
         correct_flags (Array): Flags indicating availability of observations.
@@ -592,7 +586,7 @@ def nll(
     )
 
     def cond_true_correct(state: Dict[str, Array], y: Array) -> Array:
-        y_hat = measurement_fn(state["x"].ravel())
+        y_hat = measurement_matrix @ state["x"].ravel()
         nlg = negative_log_gaussian_sqrt(y, y_hat, R_sqrt)
         return nlg
 

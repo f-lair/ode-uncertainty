@@ -7,10 +7,11 @@ filter_builder:
       init_args:
         scale: 1.0
     disable_cov_update: true
-solver_builder:
-  class_path: src.solvers.Dopri65
+solver_builder: 
+  class_path: src.solvers.DiffraxSolverBuilder
   init_args:
-    step_size: 0.01
+    name: Kvaerno3
+    step_size: 0.0001
 ode_builder:
   class_path: src.ode.HodgkinHuxley
   init_args:
@@ -68,7 +69,7 @@ params_optimized:
   E_Ca: false
   g_T: false
   V_x: false
-num_tempering_stages: 3
+num_tempering_stages: 4
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.LinearDecaySchedule
@@ -94,7 +95,7 @@ num_param_evals:
   E_Ca: 1
   g_T: 1
   V_x: 1
-seed: 7
+seed: 14
 num_processes: 4
 disable_pbar: false
 verbose: false

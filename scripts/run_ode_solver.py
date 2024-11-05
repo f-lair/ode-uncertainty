@@ -63,10 +63,7 @@ def main(
 
     num_steps = int(math.ceil((tN - t0) / step_size))
     x0_arr_built = ode_builder.build_initial_value(x0_arr, ode_builder.params)
-    state_def = solver_builder.state_def(*x0_arr_built.shape)
-    initial_state = {k: jnp.zeros(v) for k, v in state_def.items()}
-    initial_state["t"] = t0_arr
-    initial_state["x"] = x0_arr_built
+    initial_state = solver_builder.init_state(t0_arr, x0_arr_built)
 
     traj_states = unroll(solver, initial_state, num_steps, save_interval, disable_pbar)
 
@@ -106,6 +103,7 @@ def unroll(
         return state, state
 
     _, traj_states = lax.scan(scan_wrapper, initial_state, jnp.arange(num_steps, dtype=int))
+    del traj_states["diffrax_state"]
     traj_states = {
         k: jnp.concat([initial_state[k][None, ...], traj_states[k]])[::save_interval]
         for k in traj_states
