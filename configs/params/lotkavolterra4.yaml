@@ -10,8 +10,8 @@ filter_builder:
 solver_builder: 
   class_path: src.solvers.DiffraxSolverBuilder
   init_args:
-    name: Kvaerno3
-    step_size: 0.0001
+    name: Tsit5
+    step_size: 0.01
 ode_builder:
   class_path: src.ode.LotkaVolterra
   init_args:
