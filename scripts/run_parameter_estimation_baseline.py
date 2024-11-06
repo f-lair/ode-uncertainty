@@ -388,21 +388,27 @@ def evaluate(
         )
         params_norm = normalize(params_reg, params_min, params_max)
         params_norm_reduced = {k: v for k, v in params_norm.items() if params_optimized[k]}  # type: ignore
-        t1 = perf_counter_ns()
-        nll_eval = nll_p(
-            params_norm_reduced,
-            deepcopy(initial_state),
-            H,
-            ys,
-            R_sqrt,
-            x_flags,
-            xy_index_map,
-            params_min_reduced,
-            params_max_reduced,
-            params_optimized_indices,
-            ode_builder.params,
-        )
-        t2 = perf_counter_ns()
+        try:
+            t1 = perf_counter_ns()
+            nll_eval = nll_p(
+                params_norm_reduced,
+                deepcopy(initial_state),
+                H,
+                ys,
+                R_sqrt,
+                x_flags,
+                xy_index_map,
+                params_min_reduced,
+                params_max_reduced,
+                params_optimized_indices,
+                ode_builder.params,
+            )
+            t2 = perf_counter_ns()
+        except RuntimeError as err:
+            if verbose:
+                print(f"An error occured at evaluation {eval_idx+1}:", str(err))
+            nll_eval = jnp.array(jnp.nan)
+            t1, t2 = 0, 0
         nll_evals.append(nll_eval)  # type: ignore
         if eval_idx > 0:
             timings.append(t2 - t1)  # type: ignore
@@ -497,34 +503,45 @@ def optimize_run(
         initial_state["x"].shape,
     )
 
-    params_norm_reduced, lbfgsb_state = lbfgsb.run(
-        init_params=params_norm_reduced,
-        bounds=bounds,
-        initial_state=deepcopy(initial_state),
-        measurement_matrix=H,
-        ys=ys,
-        R_sqrt=R_sqrt,
-        correct_flags=correct_flags,
-        xy_index_map=xy_index_map,
-        params_min=params_min_reduced,
-        params_max=params_max_reduced,
-        params_optimized_indices=params_optimized_indices,
-        params_default=ode_builder.params,
-    )
-    params_optim_reduced = inv_normalize(
-        params_norm_reduced, params_min_reduced, params_max_reduced
-    )
+    try:
+        params_norm_reduced, lbfgsb_state = lbfgsb.run(
+            init_params=params_norm_reduced,
+            bounds=bounds,
+            initial_state=deepcopy(initial_state),
+            measurement_matrix=H,
+            ys=ys,
+            R_sqrt=R_sqrt,
+            correct_flags=correct_flags,
+            xy_index_map=xy_index_map,
+            params_min=params_min_reduced,
+            params_max=params_max_reduced,
+            params_optimized_indices=params_optimized_indices,
+            params_default=ode_builder.params,
+        )
+        params_optim_reduced = inv_normalize(
+            params_norm_reduced, params_min_reduced, params_max_reduced
+        )
 
-    if verbose:
-        print(f"Parameters [1]:", params_optim_reduced)
-        print(f"LBFGSB state [1]:", lbfgsb_state)
-    jax.clear_caches()
+        if verbose:
+            print(f"Parameters [1]:", params_optim_reduced)
+            print(f"LBFGSB state [1]:", lbfgsb_state)
+        jax.clear_caches()
 
-    params_optim_reduced = ravel_pytree(params_optim_reduced)[0]
-    nll_optim = lbfgsb_state.fun_val
-    num_lbfgs_iters = lbfgsb_state.iter_num
-    num_nll_evals = lbfgsb_state.num_fun_eval
-    num_nll_jac_evals = lbfgsb_state.num_jac_eval
+        params_optim_reduced = ravel_pytree(params_optim_reduced)[0]
+        nll_optim = lbfgsb_state.fun_val
+        num_lbfgs_iters = lbfgsb_state.iter_num
+        num_nll_evals = lbfgsb_state.num_fun_eval
+        num_nll_jac_evals = lbfgsb_state.num_jac_eval
+    except RuntimeError as err:
+        if verbose:
+            print(f"An error occured during optimization:", str(err))
+        params_optim_reduced = ravel_pytree(
+            inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced)
+        )[0]
+        nll_optim = jnp.zeros(())
+        num_lbfgs_iters = jnp.zeros(())
+        num_nll_evals = jnp.zeros(())
+        num_nll_jac_evals = jnp.zeros(())
 
     return (
         params_init_reduced,

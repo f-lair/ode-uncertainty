@@ -268,7 +268,10 @@ class SQRT_EKF(FilterBuilder):
 
             x_next = x_next.reshape(x.shape)
 
-            params_jac = tree.map(lambda _x: jnp.abs(_x), jacfwd(ode, 2)(t[0], x[0], params))
+            params_jac = tree.map(
+                lambda _x: jnp.abs(_x).squeeze(), jacfwd(ode, 2)(t[0], x[0], params)
+            )
+            params_jac = tree.map(lambda _x: jnp.sum(_x, axis=list(range(1, _x.ndim))), params_jac)
             Q_vec = tree.reduce(operator.add, params_jac).flatten()
             Q_sqrt = jnp.diag(Q_vec.size * Q_vec / jnp.sum(Q_vec))
 

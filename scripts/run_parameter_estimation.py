@@ -485,20 +485,29 @@ def evaluate(
             )
             params_norm = normalize(params_reg, params_min, params_max)
             params_norm_reduced = {k: v for k, v in params_norm.items() if params_optimized[k]}  # type: ignore
-            t1 = perf_counter_ns()
-            nll_eval = nll_p(
-                params_norm_reduced,
-                deepcopy(initial_state),
-                H,
-                ys,
-                x_flags,
-                xy_index_map,
-                params_min_reduced,
-                params_max_reduced,
-                params_optimized_indices,
-                ode_builder.params,
-            )
-            t2 = perf_counter_ns()
+            try:
+                t1 = perf_counter_ns()
+                nll_eval = nll_p(
+                    params_norm_reduced,
+                    deepcopy(initial_state),
+                    H,
+                    ys,
+                    x_flags,
+                    xy_index_map,
+                    params_min_reduced,
+                    params_max_reduced,
+                    params_optimized_indices,
+                    ode_builder.params,
+                )
+                t2 = perf_counter_ns()
+            except RuntimeError as err:
+                if verbose:
+                    print(
+                        f"An error occured at tempering stage {tempering_idx+1}, evaluation {eval_idx+1}:",
+                        str(err),
+                    )
+                nll_eval = jnp.array(jnp.nan)
+                t1, t2 = 0, 0
             nll_evals[-1].append(nll_eval)  # type: ignore
             if not (tempering_idx == 0 and eval_idx == 0):
                 timings.append(t2 - t1)  # type: ignore
@@ -618,34 +627,46 @@ def optimize_run(
             ode_builder.build_initial_value(x0, params)[None],  # type: ignore
             initial_state["x"].shape,
         )
+        try:
+            params_norm_reduced, lbfgsb_state = lbfgsb.run(
+                init_params=params_norm_reduced,
+                bounds=bounds,
+                initial_state=deepcopy(initial_state),
+                measurement_matrix=H,
+                ys=ys,
+                correct_flags=correct_flags,
+                xy_index_map=xy_index_map,
+                params_min=params_min_reduced,
+                params_max=params_max_reduced,
+                params_optimized_indices=params_optimized_indices,
+                params_default=ode_builder.params,
+            )
+            params_optim_reduced = inv_normalize(
+                params_norm_reduced, params_min_reduced, params_max_reduced
+            )
+            params_optims_reduced.append(ravel_pytree(params_optim_reduced)[0])
+            nll_optims.append(lbfgsb_state.fun_val)
+            num_lbfgs_iters.append(lbfgsb_state.iter_num)
+            num_nll_evals.append(lbfgsb_state.num_fun_eval)
+            num_nll_jac_evals.append(lbfgsb_state.num_jac_eval)
 
-        params_norm_reduced, lbfgsb_state = lbfgsb.run(
-            init_params=params_norm_reduced,
-            bounds=bounds,
-            initial_state=deepcopy(initial_state),
-            measurement_matrix=H,
-            ys=ys,
-            correct_flags=correct_flags,
-            xy_index_map=xy_index_map,
-            params_min=params_min_reduced,
-            params_max=params_max_reduced,
-            params_optimized_indices=params_optimized_indices,
-            params_default=ode_builder.params,
-        )
-        params_optim_reduced = inv_normalize(
-            params_norm_reduced, params_min_reduced, params_max_reduced
-        )
-        params_optims_reduced.append(ravel_pytree(params_optim_reduced)[0])
-        nll_optims.append(lbfgsb_state.fun_val)
-        num_lbfgs_iters.append(lbfgsb_state.iter_num)
-        num_nll_evals.append(lbfgsb_state.num_fun_eval)
-        num_nll_jac_evals.append(lbfgsb_state.num_jac_eval)
+            if verbose:
+                print(f"Gamma [{tempering_idx+1}]:", gamma)
+                print(f"Parameters [{tempering_idx+1}]:", params_optim_reduced)
+                print(f"LBFGSB state [{tempering_idx+1}]:", lbfgsb_state)
+            jax.clear_caches()
+        except RuntimeError as err:
+            if verbose:
+                print(f"An error occured at tempering stage {tempering_idx+1}:", str(err))
+            params_optim_reduced = ravel_pytree(
+                inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced)
+            )[0]
+            params_optims_reduced.append(params_optim_reduced)
+            nll_optims.append(0)
+            num_lbfgs_iters.append(0)
+            num_nll_evals.append(0)
+            num_nll_jac_evals.append(0)
 
-        if verbose:
-            print(f"Gamma [{tempering_idx+1}]:", gamma)
-            print(f"Parameters [{tempering_idx+1}]:", params_optim_reduced)
-            print(f"LBFGSB state [{tempering_idx+1}]:", lbfgsb_state)
-        jax.clear_caches()
     params_optims_reduced = jnp.stack(params_optims_reduced)
     nll_optims = jnp.stack(nll_optims)
     num_lbfgs_iters = jnp.stack(num_lbfgs_iters)
