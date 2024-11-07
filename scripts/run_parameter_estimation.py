@@ -230,6 +230,7 @@ def optimize(
             filter_correct,
             solver,
             ode,
+            ode_builder.build_initial_value,
             cov_update_fn,
         ),
     )
@@ -459,6 +460,7 @@ def evaluate(
             filter_correct,
             solver,
             ode,
+            ode_builder.build_initial_value,
             cov_update_fn,
         )
     )
@@ -479,10 +481,6 @@ def evaluate(
 
         for eval_idx in trange(param_eval_arr.shape[0], desc=f"Evaluations", disable=disable_pbar):
             params_reg = unravel_fn(param_eval_arr[eval_idx])
-            initial_state["x"] = jnp.broadcast_to(
-                ode_builder.build_initial_value(x0_arr, params_reg)[None],
-                initial_state["x"].shape,
-            )
             params_norm = normalize(params_reg, params_min, params_max)
             params_norm_reduced = {k: v for k, v in params_norm.items() if params_optimized[k]}  # type: ignore
             try:
@@ -490,6 +488,7 @@ def evaluate(
                 nll_eval = nll_p(
                     params_norm_reduced,
                     deepcopy(initial_state),
+                    x0_arr,
                     H,
                     ys,
                     x_flags,
@@ -615,23 +614,12 @@ def optimize_run(
         initial_state["Q_sqrt"] = jnp.diag(w)
         initial_state["gamma_sqrt"] = gamma**0.5
 
-        params_reduced = inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced)
-        params_reduced_flat, _ = ravel_pytree(params_reduced)
-        default_params_flat, unravel_fn = ravel_pytree(ode_builder.params)
-        params = unravel_fn(
-            default_params_flat.at[params_optimized_indices].set(
-                params_reduced_flat, indices_are_sorted=True, unique_indices=True
-            )
-        )
-        initial_state["x"] = jnp.broadcast_to(
-            ode_builder.build_initial_value(x0, params)[None],  # type: ignore
-            initial_state["x"].shape,
-        )
         try:
             params_norm_reduced, lbfgsb_state = lbfgsb.run(
                 init_params=params_norm_reduced,
                 bounds=bounds,
                 initial_state=deepcopy(initial_state),
+                x0=x0,
                 measurement_matrix=H,
                 ys=ys,
                 correct_flags=correct_flags,
@@ -683,16 +671,18 @@ def optimize_run(
     )
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5))
+@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5, 6))
 def nll(
     num_steps: int,
     filter_predict: ParametrizedFilterPredict,
     filter_correct: FilterCorrect,
     solver: ParametrizedSolver,
     ode: ODE,
+    ode_build_initial_value: Callable,
     cov_update_fn: CovarianceUpdateFunction,
     params_norm: Dict[str, Array],
     initial_state: Dict[str, Array],
+    x0: Array,
     measurement_matrix: Array,
     ys: Array,
     correct_flags: Array,
@@ -714,6 +704,7 @@ def nll(
         cov_update_fn (CovarianceFunction): Covariance function.
         params_norm (Dict[str, Array]): Normalized ODE parameters.
         initial_state (Dict[str, Array]): Initial state.
+        x0 (Array): Initial value.
         measurement_matrix (Array): Measurement matrix.
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
@@ -734,6 +725,10 @@ def nll(
         default_params_flat.at[params_optimized_indices].set(
             params_flat, indices_are_sorted=True, unique_indices=True
         )
+    )
+    initial_state["x"] = jnp.broadcast_to(
+        ode_build_initial_value(x0, params)[None],  # type: ignore
+        initial_state["x"].shape,
     )
 
     def cond_true_correct(state: Dict[str, Array]) -> Tuple[Dict[str, Array], Array]:

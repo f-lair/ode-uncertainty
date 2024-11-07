@@ -184,6 +184,7 @@ def optimize(
             num_steps,
             solver,
             ode,
+            ode_builder.build_initial_value,
         ),
     )
 
@@ -375,6 +376,7 @@ def evaluate(
             num_steps,
             solver,
             ode,
+            ode_builder.build_initial_value,
         )
     )
     nll_evals = []
@@ -382,10 +384,6 @@ def evaluate(
 
     for eval_idx in trange(param_eval_arr.shape[0], desc=f"Evaluations", disable=disable_pbar):
         params_reg = unravel_fn(param_eval_arr[eval_idx])
-        initial_state["x"] = jnp.broadcast_to(
-            ode_builder.build_initial_value(x0_arr, params_reg),
-            initial_state["x"].shape,
-        )
         params_norm = normalize(params_reg, params_min, params_max)
         params_norm_reduced = {k: v for k, v in params_norm.items() if params_optimized[k]}  # type: ignore
         try:
@@ -393,6 +391,7 @@ def evaluate(
             nll_eval = nll_p(
                 params_norm_reduced,
                 deepcopy(initial_state),
+                x0_arr,
                 H,
                 ys,
                 R_sqrt,
@@ -484,7 +483,6 @@ def optimize_run(
         {k: jnp.ones_like(v[run_idx]) for k, v in params_norms_reduced.items()},
     )
 
-    params_norm = {k: params_norms[k][run_idx] for k in params_norms}
     params_norm_reduced = {k: params_norms_reduced[k][run_idx] for k in params_norms_reduced}
     params_init_reduced = ravel_pytree(
         inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced)
@@ -496,18 +494,12 @@ def optimize_run(
             inv_normalize(params_norm_reduced, params_min_reduced, params_max_reduced),
         )
 
-    initial_state["x"] = jnp.broadcast_to(
-        ode_builder.build_initial_value(
-            x0, inv_normalize(params_norm, params_min, params_max)  # type: ignore
-        ),
-        initial_state["x"].shape,
-    )
-
     try:
         params_norm_reduced, lbfgsb_state = lbfgsb.run(
             init_params=params_norm_reduced,
             bounds=bounds,
             initial_state=deepcopy(initial_state),
+            x0=x0,
             measurement_matrix=H,
             ys=ys,
             R_sqrt=R_sqrt,
@@ -553,13 +545,15 @@ def optimize_run(
     )
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2))
+@partial(jax.jit, static_argnums=(0, 1, 2, 3))
 def nll(
     num_steps: int,
     solver: ParametrizedSolver,
     ode: ODE,
+    ode_build_initial_value: Callable,
     params_norm: Dict[str, Array],
     initial_state: Dict[str, Array],
+    x0: Array,
     measurement_matrix: Array,
     ys: Array,
     R_sqrt: Array,
@@ -579,6 +573,7 @@ def nll(
         ode (ODE): ODE RHS.
         params_norm (Dict[str, Array]): Normalized ODE parameters.
         initial_state (Dict[str, Array]): Initial state.
+        x0 (Array): Initial value.
         measurement_matrix (Array): Measurement matrix.
         ys (Array): Observations.
         R_sqrt (Array): Measurement noise.
@@ -600,6 +595,10 @@ def nll(
         default_params_flat.at[params_optimized_indices].set(
             params_flat, indices_are_sorted=True, unique_indices=True
         )
+    )
+    initial_state["x"] = jnp.broadcast_to(
+        ode_build_initial_value(x0, params),  # type: ignore
+        initial_state["x"].shape,
     )
 
     def cond_true_correct(state: Dict[str, Array], y: Array) -> Array:
