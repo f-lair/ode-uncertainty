@@ -1,0 +1,28 @@
+output: null
+filter_builder:
+  class_path: src.filters.SQRT_EKF
+  init_args:
+    cov_update_fn_builder:
+      class_path: src.covariance_update_functions.OuterCovarianceUpdate
+      init_args:
+        scale: 3.0
+solver_builder: 
+  class_path: src.solvers.BS32
+  init_args:
+    step_size: 0.01
+ode_builder:
+  class_path: src.ode.LotkaVolterra
+  init_args:
+    alpha: 1.5
+    beta: 1.0
+    gamma: 3.0
+    delta: 1.0
+x0: '[[1.0, 1.0]]'
+P0: null
+t0: 0.0
+tN: 20.0
+y_path: ../results/gt/lotkavolterra.h5
+measurement_matrix: '[[1, 0], [0, 1]]'
+obs_noise_var: 0.0
+save_interval: 1
+disable_pbar: false

@@ -1,0 +1,33 @@
+output: ../results/noise_gt/hodgkinhuxley_c4_r4.h5
+solver_builder: 
+  class_path: src.solvers.DiffraxSolverBuilder
+  init_args:
+    name: Kvaerno3
+    step_size: 0.0001
+ode_builder:
+  class_path: src.ode.MultiCompartmentHodgkinHuxley
+  init_args:
+    model: reduced-4
+    num_compartments: 4
+    coupling_coeffs: '[1.0, 1.0, 1.0]'
+    C: 1.0
+    A: '[4.15e-5, 4.15e-5, 4.15e-5, 4.15e-5]'
+    g_Na: '[15.0, 17.5, 20.0, 22.5]'
+    E_Na: '[53.0, 53.0, 53.0, 53.0]'
+    g_K: '[7.0, 7.0, 7.0, 7.0]'
+    E_K: '[-107.0, -107.0, -107.0, -107.0]'
+    g_leak: '[0.1, 0.1, 0.1, 0.1]'
+    E_leak: '[-70.0, -70.0, -70.0, -70.0]'
+    V_T: '[-60.0, -60.0, -60.0, -60.0]'
+    g_M: '[0.01, 0.01, 0.01, 0.01]'
+    tau_max: '[4e3, 4e3, 4e3, 4e3]'
+    g_L: '[0.01, 0.01, 0.01, 0.01]'
+    E_Ca: '[120.0, 120.0, 120.0, 120.0]'
+    g_T: '[0.0, 0.0, 0.0, 0.0]'
+    V_x: '[2.0, 2.0, 2.0, 2.0]'
+x0: '[[-70.0, -70.0, -70.0, -70.0]]'
+t0: 0.0
+tN: 100.0
+noise_var: 0.1
+save_interval: 100
+disable_pbar: false
