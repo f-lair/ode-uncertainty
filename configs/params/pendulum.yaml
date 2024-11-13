@@ -7,10 +7,9 @@ filter_builder:
       init_args:
         scale: 1.0
     disable_cov_update: true
-solver_builder:
-  class_path: src.solvers.DiffraxSolverBuilder
+solver_builder: 
+  class_path: src.solvers.Dopri65
   init_args:
-    name: Tsit5
     step_size: 0.01
 ode_builder:
   class_path: src.ode.Pendulum

@@ -76,7 +76,7 @@ gamma_noise_schedule:
   init_args:
     init_noise_log: -2.0
     decay_rate: 3
-gamma_noise_weights: '[4.375, 0.875, 0.875, 0.875, 0, 0, 0]'
+gamma_noise_weights: '[5, 1, 1, 1, 0, 0, 0]' #'[4.375, 0.875, 0.875, 0.875, 0, 0, 0]'
 lbfgs_maxiter: 400
 num_random_runs: 100
 num_param_evals:

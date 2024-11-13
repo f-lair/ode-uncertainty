@@ -8,9 +8,8 @@ filter_builder:
         scale: 1.0
     disable_cov_update: true
 solver_builder: 
-  class_path: src.solvers.DiffraxSolverBuilder
+  class_path: src.solvers.Dopri65
   init_args:
-    name: Tsit5
     step_size: 0.01
 ode_builder:
   class_path: src.ode.LotkaVolterra
@@ -42,7 +41,7 @@ gamma_noise_schedule:
   init_args:
     init_noise_log: -2.0
     decay_rate: 3
-gamma_noise_weights: '[1, 0]'
+gamma_noise_weights: '[2, 0]'
 lbfgs_maxiter: 200
 num_random_runs: 100
 num_param_evals:

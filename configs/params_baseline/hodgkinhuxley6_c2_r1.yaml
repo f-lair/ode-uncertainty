@@ -31,6 +31,7 @@ tN: 100.0
 y_path: ../results/noise_gt/hodgkinhuxley_c2_r1.h5
 measurement_matrix: '[[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]]'
 params_range:
+  coupling_coeffs: [1.0, 1.0]
   C: [0.4, 3.0]
   A: [1.9e-05, 30.2e-05]
   g_Na: [0.5, 80.0]

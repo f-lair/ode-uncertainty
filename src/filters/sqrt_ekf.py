@@ -185,138 +185,139 @@ class SQRT_EKF(FilterBuilder):
 
         return predict
 
-    # def build_parametrized_predict(self) -> ParametrizedFilterPredict:
-    #     def parametrized_predict(
-    #         solver: ParametrizedSolver,
-    #         cov_update_fn_sqrt: CovarianceUpdateFunction,
-    #         ode: ODE,
-    #         params: Dict[str, Array],
-    #         state: Dict[str, Array],
-    #     ) -> Dict[str, Array]:
-    #         def cov_update_true(P_sqrt_next, Q_sqrt, gamma_sqrt, eps):
-    #             cov_update_true_Q_add_true = (
-    #                 lambda _P_sqrt_next, _Q_sqrt, _gamma_sqrt, _eps: sqrt_L_sum_qr(
-    #                     cov_update_fn_sqrt(_P_sqrt_next, _eps.ravel()), _gamma_sqrt * _Q_sqrt
-    #                 )
-    #             )
-    #             cov_update_true_Q_add_false = (
-    #                 lambda _P_sqrt_next, _Q_sqrt, _gamma_sqrt, _eps: cov_update_fn_sqrt(
-    #                     _P_sqrt_next, _eps.ravel()
-    #                 )
-    #             )
+    def build_parametrized_predict(self) -> ParametrizedFilterPredict:
+        def parametrized_predict(
+            solver: ParametrizedSolver,
+            cov_update_fn_sqrt: CovarianceUpdateFunction,
+            ode: ODE,
+            params: Dict[str, Array],
+            state: Dict[str, Array],
+        ) -> Dict[str, Array]:
+            def cov_update_true(P_sqrt_next, Q_sqrt, gamma_sqrt, eps):
+                cov_update_true_Q_add_true = (
+                    lambda _P_sqrt_next, _Q_sqrt, _gamma_sqrt, _eps: sqrt_L_sum_qr(
+                        cov_update_fn_sqrt(_P_sqrt_next, _eps.ravel()), _gamma_sqrt * _Q_sqrt
+                    )
+                )
+                cov_update_true_Q_add_false = (
+                    lambda _P_sqrt_next, _Q_sqrt, _gamma_sqrt, _eps: cov_update_fn_sqrt(
+                        _P_sqrt_next, _eps.ravel()
+                    )
+                )
 
-    #             return lax.cond(
-    #                 jnp.any(Q_sqrt >= 1e-16),
-    #                 cov_update_true_Q_add_true,
-    #                 cov_update_true_Q_add_false,
-    #                 P_sqrt_next,
-    #                 Q_sqrt,
-    #                 gamma_sqrt,
-    #                 eps,
-    #             )
+                return lax.cond(
+                    jnp.any(Q_sqrt >= 1e-16),
+                    cov_update_true_Q_add_true,
+                    cov_update_true_Q_add_false,
+                    P_sqrt_next,
+                    Q_sqrt,
+                    gamma_sqrt,
+                    eps,
+                )
 
-    #         def cov_update_false(P_sqrt_next, Q_sqrt, gamma_sqrt, eps):
-    #             cov_update_false_Q_add_true = (
-    #                 lambda _P_sqrt_next, _Q_sqrt, _gamma_sqrt, _eps: sqrt_L_sum_qr(
-    #                     _P_sqrt_next, _gamma_sqrt * _Q_sqrt
-    #                 )
-    #             )
-    #             cov_update_false_Q_add_false = (
-    #                 lambda _P_sqrt_next, _Q_sqrt, _gamma_sqrt, _eps: _P_sqrt_next
-    #             )
+            def cov_update_false(P_sqrt_next, Q_sqrt, gamma_sqrt, eps):
+                cov_update_false_Q_add_true = (
+                    lambda _P_sqrt_next, _Q_sqrt, _gamma_sqrt, _eps: sqrt_L_sum_qr(
+                        _P_sqrt_next, _gamma_sqrt * _Q_sqrt
+                    )
+                )
+                cov_update_false_Q_add_false = (
+                    lambda _P_sqrt_next, _Q_sqrt, _gamma_sqrt, _eps: _P_sqrt_next
+                )
 
-    #             return lax.cond(
-    #                 jnp.any(Q_sqrt >= 1e-16),
-    #                 cov_update_false_Q_add_true,
-    #                 cov_update_false_Q_add_false,
-    #                 P_sqrt_next,
-    #                 Q_sqrt,
-    #                 gamma_sqrt,
-    #                 eps,
-    #             )
+                return lax.cond(
+                    jnp.any(Q_sqrt >= 1e-16),
+                    cov_update_false_Q_add_true,
+                    cov_update_false_Q_add_false,
+                    P_sqrt_next,
+                    Q_sqrt,
+                    gamma_sqrt,
+                    eps,
+                )
 
-    #         t, x, diffrax_state, P_sqrt, Q_sqrt, gamma_sqrt = (
-    #             state["t"],
-    #             state["x"],
-    #             state["diffrax_state"],
-    #             state["P_sqrt"],
-    #             state["Q_sqrt"],
-    #             state["gamma_sqrt"],
-    #         )
+            t, x, diffrax_state, P_sqrt, Q_sqrt, gamma_sqrt = (
+                state["t"],
+                state["x"],
+                state["diffrax_state"],
+                state["P_sqrt"],
+                state["Q_sqrt"],
+                state["gamma_sqrt"],
+            )
 
-    #         def solver_jmp_wrapper(x_flat: Array) -> Tuple[Array, Tuple[Array, Array, Array]]:
-    #             solver_state = {
-    #                 "t": t,
-    #                 "x": x_flat.reshape(*x.shape),
-    #                 "diffrax_state": diffrax_state,
-    #             }
-    #             next_solver_state = solver(ode, params, solver_state)
-    #             x_next_flat = next_solver_state["x"].flatten()
-    #             return x_next_flat, (
-    #                 next_solver_state["t"],
-    #                 next_solver_state["eps"],
-    #                 next_solver_state["diffrax_state"],
-    #             )
+            def solver_jmp_wrapper(x_flat: Array) -> Tuple[Array, Tuple[Array, Array, Array]]:
+                solver_state = {
+                    "t": t,
+                    "x": x_flat.reshape(*x.shape),
+                    "diffrax_state": diffrax_state,
+                }
+                next_solver_state = solver(ode, params, solver_state)
+                x_next_flat = next_solver_state["x"].flatten()
+                return x_next_flat, (
+                    next_solver_state["t"],
+                    next_solver_state["eps"],
+                    next_solver_state["diffrax_state"],
+                )
 
-    #         def solver_jac_params_wrapper(params):
-    #             solver_state = {
-    #                 "t": t,
-    #                 "x": x,
-    #                 "diffrax_state": diffrax_state,
-    #             }
-    #             next_solver_state = solver(ode, params, solver_state)
-    #             x_next_flat = next_solver_state["x"].flatten()
-    #             return x_next_flat
+            def solver_jac_params_wrapper(params):
+                solver_state = {
+                    "t": t,
+                    "x": x,
+                    "diffrax_state": diffrax_state,
+                }
+                next_solver_state = solver(ode, params, solver_state)
+                x_next_flat = next_solver_state["x"].flatten()
+                return x_next_flat
 
-    #         x_next, P_sqrt_next, (t_next, eps, diffrax_state_next) = jmp_aux(
-    #             solver_jmp_wrapper, (None, None, None), [x.flatten()], [P_sqrt[0]]
-    #         )
-    #         # Reverse Mode AD:
-    #         # x_next, P_sqrt_next, (t_next, eps, diffrax_state_next) = mjp_aux(
-    #         #     solver_jmp_wrapper, [x.flatten()], [P_sqrt[0].T]
-    #         # )
-    #         # P_sqrt_next = P_sqrt_next.T
+            x_next, P_sqrt_next, (t_next, eps, diffrax_state_next) = jmp_aux(
+                solver_jmp_wrapper, (None, None, None), [x.flatten()], [P_sqrt[0]]
+            )
+            # Reverse Mode AD:
+            # x_next, P_sqrt_next, (t_next, eps, diffrax_state_next) = mjp_aux(
+            #     solver_jmp_wrapper, [x.flatten()], [P_sqrt[0].T]
+            # )
+            # P_sqrt_next = P_sqrt_next.T
 
-    #         x_next = x_next.reshape(x.shape)
+            x_next = x_next.reshape(x.shape)
 
-    #         # Params Jac against ODE:
-    #         # params_jac = tree.map(
-    #         #     lambda _x: jnp.abs(_x).squeeze(), jacfwd(ode, 2)(t[0], x[0], params)
-    #         # )
-    #         # Params Jac against Solver:
-    #         params_jac = tree.map(
-    #             lambda _x: jnp.abs(_x).squeeze(), jacfwd(solver_jac_params_wrapper)(params)
-    #         )
-    #         params_jac = tree.map(lambda _x: jnp.sum(_x, axis=list(range(1, _x.ndim))), params_jac)
-    #         Q_vec = tree.reduce(operator.add, params_jac).flatten()
-    #         Q_sqrt = jnp.diag(Q_vec.size * Q_vec / jnp.sum(Q_vec))
+            # Params Jac against ODE:
+            params_jac = tree.map(
+                lambda _x: jnp.abs(_x).squeeze(), jacfwd(ode, 2)(t[0], x[0], params)
+            )
+            # Params Jac against Solver:
+            # params_jac = tree.map(
+            #     lambda _x: jnp.abs(_x).squeeze(), jacfwd(solver_jac_params_wrapper)(params)
+            # )
+            params_jac = tree.map(lambda _x: jnp.sum(_x, axis=list(range(1, _x.ndim))), params_jac)
+            Q_vec = tree.reduce(operator.add, params_jac).flatten()
+            Q_sqrt = jnp.diag(Q_vec.size**0.5 * Q_vec / jnp.linalg.norm(Q_vec))
+            # Q_sqrt = jnp.diag(Q_vec.size * Q_vec / jnp.sum(Q_vec))
 
-    #         P_sqrt_next = lax.cond(
-    #             self.disable_cov_update,
-    #             cov_update_false,
-    #             cov_update_true,
-    #             P_sqrt_next,
-    #             Q_sqrt,
-    #             gamma_sqrt,
-    #             eps,
-    #         )  # [N*D, N*D]
+            P_sqrt_next = lax.cond(
+                self.disable_cov_update,
+                cov_update_false,
+                cov_update_true,
+                P_sqrt_next,
+                Q_sqrt,
+                gamma_sqrt,
+                eps,
+            )  # [N*D, N*D]
 
-    #         next_state = {
-    #             "t": t_next,
-    #             "x": x_next,
-    #             "diffrax_state": diffrax_state_next,
-    #             "eps": eps,
-    #             "P_sqrt": P_sqrt_next[None, :, :],
-    #             "Q_sqrt": state["Q_sqrt"],
-    #             "gamma_sqrt": state["gamma_sqrt"],
-    #             "y": state["y"],
-    #             "y_hat": state["y_hat"],
-    #             "R_sqrt": state["R_sqrt"],
-    #             "S_sqrt": state["S_sqrt"],
-    #         }
-    #         return next_state
+            next_state = {
+                "t": t_next,
+                "x": x_next,
+                "diffrax_state": diffrax_state_next,
+                "eps": eps,
+                "P_sqrt": P_sqrt_next[None, :, :],
+                "Q_sqrt": state["Q_sqrt"],
+                "gamma_sqrt": state["gamma_sqrt"],
+                "y": state["y"],
+                "y_hat": state["y_hat"],
+                "R_sqrt": state["R_sqrt"],
+                "S_sqrt": state["S_sqrt"],
+            }
+            return next_state
 
-    #     return parametrized_predict
+        return parametrized_predict
 
     def build_correct(self) -> FilterCorrect:
         def correct(H: Array, state: Dict[str, Array]) -> Dict[str, Array]:
