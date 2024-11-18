@@ -1,11 +1,11 @@
 from jax import Array
 from jax import numpy as jnp
-from tensorflow_probability.substrates import jax as tfp
 
 from src.covariance_update_functions.covariance_update_function import (
     CovarianceUpdateFunction,
     CovarianceUpdateFunctionBuilder,
 )
+from src.utils import sqrt_L_sum_qr
 
 
 class OuterCovarianceUpdate(CovarianceUpdateFunctionBuilder):
@@ -54,6 +54,9 @@ class OuterCovarianceUpdate(CovarianceUpdateFunctionBuilder):
                 Array: Updated covariance square-root [N*D, N*D].
             """
 
-            return tfp.math.cholesky_update(cov_sqrt, self.scale * eps)
+            scaled_eps = self.scale * eps
+            Q_sqrt = jnp.outer(scaled_eps, scaled_eps) / (scaled_eps @ scaled_eps) ** 0.5
+
+            return sqrt_L_sum_qr(cov_sqrt, Q_sqrt)
 
         return cov_update_sqrt
