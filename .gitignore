@@ -3,6 +3,7 @@
 *.pyc
 *.h5
 *.ps1
+*.zip
 TODO.md
 notebooks/
 animations/

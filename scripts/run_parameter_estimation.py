@@ -1,5 +1,6 @@
 import itertools
 import math
+import operator
 import sys
 from ast import literal_eval
 from copy import deepcopy
@@ -16,7 +17,7 @@ import h5py
 import multiprocess
 from jax import Array, lax
 from jax import numpy as jnp
-from jax import random
+from jax import random, tree
 from jax.flatten_util import ravel_pytree
 from jaxopt import ScipyBoundedMinimize
 from jsonargparse import CLI
@@ -63,6 +64,8 @@ def optimize(
     obs_noise_var: float = 0.1,
     gamma_noise_schedule: NoiseSchedule = ExponentialDecaySchedule(),
     gamma_noise_weights: str | None = None,
+    initial_state_parametrized: bool = False,
+    parameter_sensitivity: bool = False,
     lbfgs_maxiter: int = 200,
     num_random_runs: int = 0,
     num_param_evals: Dict[str, int] | None = None,
@@ -227,6 +230,8 @@ def optimize(
         partial(
             nll,
             num_steps,
+            initial_state_parametrized,
+            parameter_sensitivity,
             filter_predict,
             filter_correct,
             solver,
@@ -322,6 +327,8 @@ def evaluate(
     obs_noise_var: float = 0.1,
     gamma_noise_schedule: NoiseSchedule = ExponentialDecaySchedule(),
     gamma_noise_weights: str | None = None,
+    initial_state_parametrized: bool = False,
+    parameter_sensitivity: bool = False,
     lbfgs_maxiter: int = 200,
     num_random_runs: int = 0,
     num_param_evals: Dict[str, int] | None = None,
@@ -458,6 +465,8 @@ def evaluate(
         partial(
             nll,
             num_steps,
+            initial_state_parametrized,
+            parameter_sensitivity,
             filter_predict,
             filter_correct,
             solver,
@@ -497,6 +506,7 @@ def evaluate(
                     xy_index_map,
                     params_min_reduced,
                     params_max_reduced,
+                    params_optimized_arr,
                     params_optimized_indices,
                     ode_builder.params,
                 )
@@ -628,6 +638,7 @@ def optimize_run(
                 xy_index_map=xy_index_map,
                 params_min=params_min_reduced,
                 params_max=params_max_reduced,
+                params_optimized=params_optimized,
                 params_optimized_indices=params_optimized_indices,
                 params_default=ode_builder.params,
             )
@@ -673,9 +684,11 @@ def optimize_run(
     )
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5, 6))
+@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4, 5, 6, 7, 8))
 def nll(
     num_steps: int,
+    initial_state_parametrized: bool,
+    parameter_sensitivity: bool,
     filter_predict: ParametrizedFilterPredict,
     filter_correct: FilterCorrect,
     solver: ParametrizedSolver,
@@ -691,6 +704,7 @@ def nll(
     xy_index_map: Array,
     params_min: Dict[str, Array],
     params_max: Dict[str, Array],
+    params_optimized: Dict[str, Array],
     params_optimized_indices: Array,
     params_default: Dict[str, Array],
 ) -> Array:
@@ -728,10 +742,32 @@ def nll(
             params_flat, indices_are_sorted=True, unique_indices=True
         )
     )
-    initial_state["x"] = jnp.broadcast_to(
-        ode_build_initial_value(x0, params)[None],  # type: ignore
-        initial_state["x"].shape,
-    )
+
+    if initial_state_parametrized:
+        initial_state["x"] = jnp.broadcast_to(
+            ode_build_initial_value(x0, params)[None],  # type: ignore
+            initial_state["x"].shape,
+        )
+
+    def solver_jac_params_wrapper(params):
+        solver_state = {
+            "t": initial_state["t"],
+            "x": initial_state["x"],
+            "diffrax_state": initial_state["diffrax_state"],
+        }
+        next_solver_state = solver(ode, params, solver_state)
+        x_next_flat = next_solver_state["x"].flatten()
+        return x_next_flat
+
+    if parameter_sensitivity:
+        params_jac = tree.map(
+            lambda _x, _optimized: _optimized * jnp.abs(_x).squeeze(),
+            jax.jacfwd(solver_jac_params_wrapper)(params),
+            params_optimized,
+        )
+        w = tree.reduce(operator.add, params_jac).flatten()
+        w = w.shape[0] ** 0.5 * w / jnp.linalg.norm(w)
+        initial_state["Q_sqrt"] = jnp.diag(w)
 
     def cond_true_correct(state: Dict[str, Array]) -> Tuple[Dict[str, Array], Array]:
         state_corrected = filter_correct(measurement_matrix, state)

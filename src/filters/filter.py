@@ -4,10 +4,17 @@ from typing import Callable, Dict, Tuple
 from jax import Array
 from jax.tree_util import Partial
 
-from src.covariance_update_functions import DiagonalCovarianceUpdate
+from src.covariance_update_functions import (
+    DiagonalCovarianceUpdate,
+    StaticDiagonalCovarianceUpdate,
+)
 from src.covariance_update_functions.covariance_update_function import (
     CovarianceUpdateFunction,
     CovarianceUpdateFunctionBuilder,
+)
+from src.covariance_update_functions.static_covariance_update_function import (
+    StaticCovarianceUpdateFunction,
+    StaticCovarianceUpdateFunctionBuilder,
 )
 from src.ode.ode import ODE
 from src.solvers.solver import ParametrizedSolver, Solver
@@ -30,9 +37,12 @@ class FilterBuilder:
     """Abstract builder base class for filters, used for ODE solving."""
 
     def __init__(
-        self, cov_update_fn_builder: CovarianceUpdateFunctionBuilder = DiagonalCovarianceUpdate()
+        self,
+        cov_update_fn_builder: CovarianceUpdateFunctionBuilder = DiagonalCovarianceUpdate(),
+        static_cov_update_fn_builder: StaticCovarianceUpdateFunctionBuilder = StaticDiagonalCovarianceUpdate(),
     ) -> None:
         self.cov_update_fn_builder = cov_update_fn_builder
+        self.static_cov_update_fn_builder = static_cov_update_fn_builder
 
     def init_state(self, solver_state: Dict[str, Array], *args) -> Dict[str, Array]:
         """
@@ -51,6 +61,19 @@ class FilterBuilder:
         return solver_state.copy()
 
     def build_cov_update_fn(self) -> CovarianceUpdateFunction:
+        """
+        Builds covariance function.
+
+        Raises:
+            NotImplementedError: Needs to be implemented for a concrete filter.
+
+        Returns:
+            CovarianceUpdateFunction: Covariance function.
+        """
+
+        raise NotImplementedError
+
+    def build_static_cov_update_fn(self) -> StaticCovarianceUpdateFunction:
         """
         Builds covariance function.
 

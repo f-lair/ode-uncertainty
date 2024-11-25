@@ -252,6 +252,28 @@ def sqrt_L_sum_qr(a: Array, b: Array) -> Array:
     return r.T
 
 
+def sqrt_L_sum_qr_3(a: Array, b: Array, c: Array) -> Array:
+    """
+    Computes lower-triangular (a+b)^(1/2), where a, b are lower-triangular matrix square-roots,
+    using QR decomposition.
+
+    Args:
+        a (Array): Lower-triangular matrix square-root [N, N].
+        b (Array): Lower-triangular matrix square-root [N, N].
+
+    Returns:
+        Array: Lower-triangular matrix square-root [N, N].
+    """
+
+    r = jsp.linalg.qr(
+        jnp.concatenate([a.T, b.T, c.T], axis=-2),
+        mode="economic",
+    )[
+        1
+    ]  # [..., N, N]
+    return r.T
+
+
 def multivariate_normal_sqrt(x: Array, m: Array, S: Array) -> Array:
     """
     Evaluates PDF of multivariate Gaussian efficiently using pre-computed covariance square-root.

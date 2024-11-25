@@ -1,6 +1,6 @@
 output: ../results/params_baseline/lotkavolterra2.h5
 solver_builder: 
-  class_path: src.solvers.Dopri65
+  class_path: src.solvers.RKF45
   init_args:
     step_size: 0.01
 ode_builder:
@@ -27,6 +27,7 @@ params_optimized:
   delta: false
 obs_noise_var: 0.1
 lbfgs_maxiter: 200
+initial_state_parametrized: false
 num_random_runs: 100
 num_param_evals:
   alpha: 50

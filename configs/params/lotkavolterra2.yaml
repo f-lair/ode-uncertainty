@@ -8,7 +8,7 @@ filter_builder:
         scale: 1.0
     disable_cov_update: true
 solver_builder: 
-  class_path: src.solvers.Dopri65
+  class_path: src.solvers.RKF45
   init_args:
     step_size: 0.01
 ode_builder:
@@ -34,19 +34,20 @@ params_optimized:
   beta: true
   gamma: false
   delta: false
-num_tempering_stages: 3
+num_tempering_stages: 4
+final_gamma_zero: False
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.LinearDecaySchedule
   init_args:
-    init_noise_log: -2.0
+    init_noise_log: 0.0
     decay_rate: 3
-gamma_noise_weights: '[2, 0]'
+gamma_noise_weights: '[1, 0]'
 lbfgs_maxiter: 200
-num_random_runs: 100
+num_random_runs: 20
 num_param_evals:
-  alpha: 50
-  beta: 50
+  alpha: 20
+  beta: 20
   gamma: 1
   delta: 1
 seed: 2

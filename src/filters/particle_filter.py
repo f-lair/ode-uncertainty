@@ -5,10 +5,17 @@ from jax import Array
 from jax import numpy as jnp
 from jax import random, tree
 
-from src.covariance_update_functions import DiagonalCovarianceUpdate
+from src.covariance_update_functions import (
+    DiagonalCovarianceUpdate,
+    StaticDiagonalCovarianceUpdate,
+)
 from src.covariance_update_functions.covariance_update_function import (
     CovarianceUpdateFunction,
     CovarianceUpdateFunctionBuilder,
+)
+from src.covariance_update_functions.static_covariance_update_function import (
+    StaticCovarianceUpdateFunction,
+    StaticCovarianceUpdateFunctionBuilder,
 )
 from src.filters.filter import FilterBuilder, FilterPredict
 from src.solvers.solver import Solver
@@ -20,9 +27,10 @@ class ParticleFilter(FilterBuilder):
     def __init__(
         self,
         cov_update_fn_builder: CovarianceUpdateFunctionBuilder = DiagonalCovarianceUpdate(),
+        static_cov_update_fn_builder: StaticCovarianceUpdateFunctionBuilder = StaticDiagonalCovarianceUpdate(),
         num_particles: int = 100,
     ) -> None:
-        super().__init__(cov_update_fn_builder)
+        super().__init__(cov_update_fn_builder, static_cov_update_fn_builder)
         self.M = num_particles
 
     def init_state(self, solver_state: Dict[str, Array], prng_key: Array) -> Dict[str, Array]:
@@ -58,6 +66,9 @@ class ParticleFilter(FilterBuilder):
 
     def build_cov_update_fn(self) -> CovarianceUpdateFunction:
         return jax.vmap(self.cov_update_fn_builder.build())
+
+    def build_static_cov_update_fn(self) -> StaticCovarianceUpdateFunction:
+        return jax.vmap(self.static_cov_update_fn_builder.build(), in_axes=(None, 0, 0))
 
     def build_predict(self) -> FilterPredict:
         def predict(

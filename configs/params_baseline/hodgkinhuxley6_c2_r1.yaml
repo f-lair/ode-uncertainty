@@ -1,4 +1,4 @@
-output: ../results/params_baseline/hodgkinhuxley6_c2_r1.h5
+output: ../results/params_baseline/hodgkinhuxley6_c2_full.h5
 solver_builder: 
   class_path: src.solvers.DiffraxSolverBuilder
   init_args:
@@ -7,7 +7,7 @@ solver_builder:
 ode_builder:
   class_path: src.ode.MultiCompartmentHodgkinHuxley
   init_args:
-    model: reduced-1
+    model: full
     num_compartments: 2
     coupling_coeffs: '[1.0]'
     C: 1.0
@@ -23,13 +23,13 @@ ode_builder:
     tau_max: '[4e3, 4e3]'
     g_L: '[0.1, 0.01]'
     E_Ca: '[120.0, 120.0]'
-    g_T: '[0.0, 0.0]'
+    g_T: '[0.01, 0.01]'
     V_x: '[2.0, 2.0]'
 x0: '[[-70.0, -70.0]]'
 t0: 0.0
 tN: 100.0
-y_path: ../results/noise_gt/hodgkinhuxley_c2_r1.h5
-measurement_matrix: '[[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0]]'
+y_path: ../results/noise_gt/hodgkinhuxley_c2_full.h5
+measurement_matrix: '[[1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]]'
 params_range:
   coupling_coeffs: [1.0, 1.0]
   C: [0.4, 3.0]
@@ -64,6 +64,7 @@ params_optimized:
   g_T: false
   V_x: false
 obs_noise_var: 0.1
+initial_state_parametrized: false
 lbfgs_maxiter: 400
 num_random_runs: 100
 num_param_evals:

@@ -1,6 +1,7 @@
 import math
 import sys
 from ast import literal_eval
+from functools import partial
 from typing import Callable, Dict, Tuple
 
 import jax
@@ -41,6 +42,7 @@ def main(
     obs_noise_var: float = 1e-3,
     seed: int = 7,
     save_interval: int = 1,
+    use_static_cov_fn: bool = False,
     disable_pbar: bool = False,
 ) -> None:
     """
@@ -80,7 +82,15 @@ def main(
     solver_builder.setup(ode, ode_builder.params)
     solver = jax.jit(jax.vmap(solver_builder.build()))
     filter_predict = jax.jit(filter_builder.build_predict(), static_argnums=(0, 1))
-    cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
+    if use_static_cov_fn:
+        cov_update_fn = jax.jit(
+            partial(
+                filter_builder.build_static_cov_update_fn(),
+                filter_builder.static_cov_update_fn_builder.scale,
+            )
+        )
+    else:
+        cov_update_fn = jax.jit(filter_builder.build_cov_update_fn())
 
     num_steps = int(math.ceil((tN - t0) / step_size))
 

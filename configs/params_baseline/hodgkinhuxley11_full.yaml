@@ -61,6 +61,7 @@ params_optimized:
   g_T: true
   V_x: false
 obs_noise_var: 0.1
+initial_state_parametrized: false
 lbfgs_maxiter: 400
 num_random_runs: 100
 num_param_evals:

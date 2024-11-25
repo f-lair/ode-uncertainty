@@ -6,9 +6,9 @@ filter_builder:
       class_path: src.covariance_update_functions.DiagonalCovarianceUpdate
       init_args:
         scale: 1.0
-    disable_cov_update: true
+    disable_cov_update: false
 solver_builder: 
-  class_path: src.solvers.Dopri65
+  class_path: src.solvers.RKF45
   init_args:
     step_size: 0.01
 ode_builder:
@@ -25,16 +25,17 @@ params_range:
   length: [0.1, 10.0]
 params_optimized:
   length: true
-num_tempering_stages: 3
+num_tempering_stages: 4
+final_gamma_zero: False
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.LinearDecaySchedule
   init_args:
-    init_noise_log: -2.0
+    init_noise_log: 0.0
     decay_rate: 3
 gamma_noise_weights: '[1, 1]'
 lbfgs_maxiter: 200
-num_random_runs: 100
+num_random_runs: 20
 num_param_evals:
   length: 100
 seed: 7

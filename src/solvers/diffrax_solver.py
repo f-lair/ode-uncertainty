@@ -3,18 +3,11 @@ from functools import partial
 from typing import Dict
 
 import jax
-from diffrax import (
-    AbstractImplicitSolver,
-    DirectAdjoint,
-    ODETerm,
-    SaveAt,
-    VeryChord,
-    diffeqsolve,
-)
+from diffrax import AbstractImplicitSolver, DirectAdjoint, ODETerm, SaveAt, diffeqsolve
 from jax import Array
 from jax import numpy as jnp
 from lineax import SVD
-from optimistix import Chord, Dogleg, LevenbergMarquardt, Newton
+from optimistix import Newton
 
 from src.ode.ode import ODE
 from src.solvers.solver import ParametrizedSolver, Solver, SolverBuilder
@@ -36,7 +29,7 @@ class DiffraxSolverBuilder(SolverBuilder):
 
         solver_cls = getattr(importlib.import_module("diffrax"), name)
         if issubclass(solver_cls, AbstractImplicitSolver):
-            self.solver = solver_cls(root_finder=VeryChord(rtol=1e-8, atol=1e-8), root_find_max_steps=500)  # type: ignore
+            self.solver = solver_cls(root_finder=Newton(rtol=1e-8, atol=1e-8), root_find_max_steps=500)  # type: ignore
         else:
             self.solver = solver_cls()
 

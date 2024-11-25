@@ -49,6 +49,7 @@ def optimize(
     params_range: Dict[str, Tuple[float, float]] | None = None,
     params_optimized: Dict[str, bool] | None = None,
     obs_noise_var: float = 0.1,
+    initial_state_parametrized: bool = False,
     lbfgs_maxiter: int = 200,
     num_random_runs: int = 0,
     num_param_evals: Dict[str, int] | None = None,
@@ -182,6 +183,7 @@ def optimize(
         partial(
             nll,
             num_steps,
+            initial_state_parametrized,
             solver,
             ode,
             ode_builder.build_initial_value,
@@ -265,6 +267,7 @@ def evaluate(
     params_range: Dict[str, Tuple[float, float]] | None = None,
     params_optimized: Dict[str, bool] | None = None,
     obs_noise_var: float = 0.1,
+    initial_state_parametrized: bool = False,
     lbfgs_maxiter: int = 200,
     num_random_runs: int = 0,
     num_param_evals: Dict[str, int] | None = None,
@@ -374,6 +377,7 @@ def evaluate(
         partial(
             nll,
             num_steps,
+            initial_state_parametrized,
             solver,
             ode,
             ode_builder.build_initial_value,
@@ -545,9 +549,10 @@ def optimize_run(
     )
 
 
-@partial(jax.jit, static_argnums=(0, 1, 2, 3))
+@partial(jax.jit, static_argnums=(0, 1, 2, 3, 4))
 def nll(
     num_steps: int,
+    initial_state_parametrized: bool,
     solver: ParametrizedSolver,
     ode: ODE,
     ode_build_initial_value: Callable,
@@ -596,10 +601,11 @@ def nll(
             params_flat, indices_are_sorted=True, unique_indices=True
         )
     )
-    initial_state["x"] = jnp.broadcast_to(
-        ode_build_initial_value(x0, params),  # type: ignore
-        initial_state["x"].shape,
-    )
+    if initial_state_parametrized:
+        initial_state["x"] = jnp.broadcast_to(
+            ode_build_initial_value(x0, params),  # type: ignore
+            initial_state["x"].shape,
+        )
 
     def cond_true_correct(state: Dict[str, Array], y: Array) -> Array:
         y_hat = measurement_matrix @ state["x"].ravel()

@@ -61,12 +61,13 @@ params_optimized:
   g_T: false
   V_x: false
 obs_noise_var: 0.1
+initial_state_parametrized: false
 lbfgs_maxiter: 200
 num_random_runs: 100
 num_param_evals:
   C: 1
   A: 1
-  g_Na: 1000
+  g_Na: 100
   E_Na: 1
   g_K: 1
   E_K: 1

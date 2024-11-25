@@ -73,14 +73,17 @@ params_optimized:
   E_Ca: false
   g_T: false
   V_x: false
-num_tempering_stages: 3
+num_tempering_stages: 4
+final_gamma_zero: false
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.LinearDecaySchedule
   init_args:
     init_noise_log: -2.0
     decay_rate: 3
-gamma_noise_weights: '[2, 0, 0, 0, 2, 0, 0, 0]' #'[4, 0, 0, 0, 4, 0, 0, 0]'
+gamma_noise_weights: '[1, 1, 1, 1, 1, 1, 1, 1]'
+initial_state_parametrized: false
+parameter_sensitivity: true
 lbfgs_maxiter: 200
 num_random_runs: 100
 num_param_evals:
