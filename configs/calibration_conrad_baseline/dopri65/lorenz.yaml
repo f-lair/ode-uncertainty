@@ -25,5 +25,5 @@ measurement_matrix: '[[1, 0, 0], [0, 1, 0], [0, 0, 1]]'
 obs_noise_var: 0.0
 min_noise_log: -16.0
 max_noise_log: 0.0
-num_noise_levels: 200
+num_noise_levels: 500
 disable_pbar: false
