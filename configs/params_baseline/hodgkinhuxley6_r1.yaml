@@ -1,12 +1,4 @@
-output: ../results/params/hodgkinhuxley6_full.h5
-filter_builder:
-  class_path: src.filters.SQRT_EKF
-  init_args:
-    cov_update_fn_builder:
-      class_path: src.covariance_update_functions.DiagonalCovarianceUpdate
-      init_args:
-        scale: 1.0
-    disable_cov_update: true
+output: ../results/params_baseline/hodgkinhuxley6_r1.h5
 solver_builder: 
   class_path: src.solvers.DiffraxSolverBuilder
   init_args:
@@ -15,7 +7,7 @@ solver_builder:
 ode_builder:
   class_path: src.ode.HodgkinHuxley
   init_args:
-    model: full
+    model: reduced-1
     C: 1.0
     A: 8.3e-05
     g_Na: 25.0
@@ -29,14 +21,13 @@ ode_builder:
     tau_max: 4000.0
     g_L: 0.01
     E_Ca: 120.0
-    g_T: 0.01
+    g_T: 0.0
     V_x: 2.0
 x0: '[[-70.0]]'
-P0: null
 t0: 0.0
 tN: 100.0
-y_path: ../results/noise_gt/hodgkinhuxley_full.h5
-measurement_matrix: '[[1, 0, 0, 0, 0, 0, 0, 0]]'
+y_path: ../results/noise_gt/hodgkinhuxley_r1.h5
+measurement_matrix: '[[1, 0, 0, 0, 0, 0, 0]]'
 params_range:
   C: [0.4, 3.0]
   A: [1.9e-05, 30.2e-05]
@@ -69,17 +60,8 @@ params_optimized:
   E_Ca: false
   g_T: false
   V_x: false
-num_tempering_stages: 4
-final_gamma_zero: false
 obs_noise_var: 0.1
-gamma_noise_schedule:
-  class_path: src.noise_schedules.LinearDecaySchedule
-  init_args:
-    init_noise_log: -2.0
-    decay_rate: 3
-gamma_noise_weights: '[1, 1, 1, 1, 1, 1, 1, 1]'
 initial_state_parametrized: false
-parameter_sensitivity: true
 lbfgs_maxiter: 400
 num_random_runs: 100
 num_param_evals:
@@ -98,7 +80,7 @@ num_param_evals:
   E_Ca: 1
   g_T: 1
   V_x: 1
-seed: 6
+seed: 61
 num_processes: 4
 disable_pbar: false
 verbose: false

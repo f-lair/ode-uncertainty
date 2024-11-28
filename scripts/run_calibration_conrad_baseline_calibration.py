@@ -220,7 +220,7 @@ def nll(
     q95 = jnp.percentile(nlls, jnp.array(95))
     nlls = jnp.clip(nlls, 0.0, q95)
 
-    out = nlls.sum()
+    out = nlls.mean()
 
     return out
 

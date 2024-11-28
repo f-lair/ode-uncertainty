@@ -765,6 +765,7 @@ def nll(
             jax.jacfwd(solver_jac_params_wrapper)(params),
             params_optimized,
         )
+        params_jac = tree.map(lambda _x: jnp.sum(_x, axis=list(range(1, _x.ndim))), params_jac)
         w = tree.reduce(operator.add, params_jac).flatten()
         w = w.shape[0] ** 0.5 * w / jnp.linalg.norm(w)
         initial_state["Q_sqrt"] = jnp.diag(w)
