@@ -34,7 +34,7 @@ params_optimized:
   beta: true
   gamma: true
   delta: true
-num_tempering_stages: 5
+num_tempering_stages: 4
 final_gamma_zero: True
 obs_noise_var: 0.1
 gamma_noise_schedule:

@@ -1,4 +1,4 @@
-output: ../results/params/hodgkinhuxley7_full.h5
+output: ../results/params_plus/hodgkinhuxley11_full.h5
 filter_builder:
   class_path: src.filters.SQRT_EKF
   init_args:
@@ -57,16 +57,16 @@ params_optimized:
   C: false
   A: false
   g_Na: true
-  E_Na: false
+  E_Na: true
   g_K: true
-  E_K: false
+  E_K: true
   g_leak: true
-  E_leak: false
+  E_leak: true
   V_T: true
   g_M: true
   tau_max: false
   g_L: true
-  E_Ca: false
+  E_Ca: true
   g_T: true
   V_x: false
 num_tempering_stages: 4
@@ -77,7 +77,7 @@ gamma_noise_schedule:
   init_args:
     init_noise_log: -2.0
     decay_rate: 3
-gamma_noise_weights: '[1, 1, 1, 1, 1, 1, 1, 1]'
+gamma_noise_weights: '[1, 1, 1, 1, 0, 0, 0, 0]'
 initial_state_parametrized: false
 parameter_sensitivity: false
 lbfgs_maxiter: 400
@@ -98,7 +98,7 @@ num_param_evals:
   E_Ca: 1
   g_T: 1
   V_x: 1
-seed: 7
+seed: 11
 num_processes: 4
 disable_pbar: false
 verbose: false

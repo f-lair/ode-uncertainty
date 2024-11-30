@@ -1,4 +1,4 @@
-output: ../results/params_s_temp_high_coarse/lotkavolterra2.h5
+output: ../results/params_plus/lotkavolterra2.h5
 filter_builder:
   class_path: src.filters.SQRT_EKF
   init_args:
@@ -34,22 +34,20 @@ params_optimized:
   beta: true
   gamma: false
   delta: false
-num_tempering_stages: 6
-final_gamma_zero: True
+num_tempering_stages: 4
+final_gamma_zero: true
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.LinearDecaySchedule
   init_args:
-    init_noise_log: 0.0
+    init_noise_log: -2.0
     decay_rate: 3
-gamma_noise_weights: '[1, 1]'
-initial_state_parametrized: false
-parameter_sensitivity: true
+gamma_noise_weights: '[1, 0]'
 lbfgs_maxiter: 200
 num_random_runs: 100
 num_param_evals:
-  alpha: 50
-  beta: 50
+  alpha: 20
+  beta: 20
   gamma: 1
   delta: 1
 seed: 2

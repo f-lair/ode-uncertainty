@@ -145,7 +145,6 @@ def optimize(
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
     w = jnp.array(literal_eval(gamma_noise_weights), dtype=float)
-    w = w.shape[0] ** 0.5 * w / jnp.linalg.norm(w)
     assert w.shape[0] == P0_sqrt_arr.shape[-1], "Invalid gamma noise weight vector!"
 
     params_min = {
@@ -419,7 +418,6 @@ def evaluate(
     ys = jnp.einsum("ij,tj->ti", H, ys.reshape(-1, H.shape[1]))
 
     w = jnp.array(literal_eval(gamma_noise_weights), dtype=float)
-    w = w.shape[0] ** 0.5 * w / jnp.linalg.norm(w)
     assert w.shape[0] == P0_sqrt_arr.shape[-1], "Invalid gamma noise weight vector!"
 
     params_min = {

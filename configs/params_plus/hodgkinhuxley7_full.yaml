@@ -1,4 +1,4 @@
-output: ../results/params/hodgkinhuxley7_full.h5
+output: ../results/params_plus/hodgkinhuxley7_full.h5
 filter_builder:
   class_path: src.filters.SQRT_EKF
   init_args:
@@ -77,7 +77,7 @@ gamma_noise_schedule:
   init_args:
     init_noise_log: -2.0
     decay_rate: 3
-gamma_noise_weights: '[1, 1, 1, 1, 1, 1, 1, 1]'
+gamma_noise_weights: '[1, 1, 1, 1, 0, 0, 0, 0]'
 initial_state_parametrized: false
 parameter_sensitivity: false
 lbfgs_maxiter: 400

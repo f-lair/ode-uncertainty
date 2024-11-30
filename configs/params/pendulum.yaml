@@ -26,16 +26,16 @@ params_range:
 params_optimized:
   length: true
 num_tempering_stages: 4
-final_gamma_zero: False
+final_gamma_zero: true
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.LinearDecaySchedule
   init_args:
-    init_noise_log: 0.0
+    init_noise_log: -2.0
     decay_rate: 3
 gamma_noise_weights: '[1, 1]'
 lbfgs_maxiter: 200
-num_random_runs: 20
+num_random_runs: 100
 num_param_evals:
   length: 100
 seed: 7

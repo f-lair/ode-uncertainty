@@ -34,13 +34,13 @@ params_optimized:
   beta: true
   gamma: false
   delta: false
-num_tempering_stages: 14
+num_tempering_stages: 11
 final_gamma_zero: True
 obs_noise_var: 0.1
 gamma_noise_schedule:
   class_path: src.noise_schedules.LinearDecaySchedule
   init_args:
-    init_noise_log: 0.0
+    init_noise_log: 1.0
     decay_rate: 1
 gamma_noise_weights: '[1, 1]'
 initial_state_parametrized: false
