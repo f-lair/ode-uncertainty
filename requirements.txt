@@ -6,6 +6,7 @@ jaxopt==0.8.3
 jax-tqdm==0.2.2
 jsonargparse==4.31.0
 numpy==1.26.4
+optax==0.2.3
 pytest==8.2.2
 p_tqdm==1.4.2
 scipy==1.13.1
