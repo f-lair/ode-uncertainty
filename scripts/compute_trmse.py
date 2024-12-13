@@ -116,8 +116,10 @@ def main(
 
 def retrieve_data(path: str):
     with h5py.File(path) as h5f:
-        params_estimated = jnp.asarray(h5f["params_optims"])[:, -1, :]
-        params_name = list(h5f["params_name"].asstr())
+        params_estimated = jnp.asarray(h5f["params_optims"])
+        if params_estimated.ndim == 3:
+            params_estimated = params_estimated[:, -1, :]
+        params_name = list(h5f["params_name"].asstr())  # type: ignore
 
     return params_estimated, params_name
 
