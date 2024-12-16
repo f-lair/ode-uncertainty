@@ -63,8 +63,9 @@ def main(
         y_path (str | None, optional): Path to H5 observations file. Defaults to None.
         measurement_matrix (str | None, optional): Measurement matrix [L, N*D]. Defaults to None.
         obs_noise_var (float, optional): Observation noise variance. Defaults to 1e-3.
-        seed (int, optional): PRNG seed. Defaults to 7.
-        save_interval (int, optional): Interval in which results are saved. Defaults to 1.
+        min_noise_log (float, optional): Minimum log process noise. Defaults to -3.0.
+        max_noise_log (float, optional): Maximum log process noise. Defaults to 1.0.
+        num_noise_levels (int, optional): Number of process noise levels. Defaults to 100.
         disable_pbar (bool, optional): Disables progress bar. Defaults to False.
     """
 
@@ -176,6 +177,7 @@ def nll(
     Unrolls trajectory.
 
     Args:
+        num_steps (int): Number of steps.
         filter_predict (FilterPredict): Predict function of ODE filter.
         filter_correct (FilterCorrect): Correct function of ODE filter.
         solver (Solver): ODE solver.
@@ -185,9 +187,6 @@ def nll(
         ys (Array): Observations.
         correct_flags (Array): Flags indicating availability of observations.
         index_map (Array): Prediction -> observation index map.
-        num_steps (int): Number of steps.
-        save_interval (int): Interval in which results are saved.
-        disable_pbar (bool): Disables progress bar.
 
     Returns:
         Dict[str, Array]: Trajectory states.
@@ -217,8 +216,6 @@ def nll(
     _, nlls = lax.scan(nll_step, initial_state, jnp.arange(num_steps, dtype=int))
 
     nlls = jnp.nan_to_num(nlls)
-    q95 = jnp.percentile(nlls, jnp.array(95))
-    nlls = jnp.clip(nlls, 0.0, q95)
 
     out = nlls.mean()
 

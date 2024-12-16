@@ -54,6 +54,7 @@ def main(
         tN (float, optional): End time. Defaults to 80.0.
         noise_var (float, optional): Noise variance (only added before saving). Defaults to 0.0.
         save_interval (int, optional): Interval in which results are saved. Defaults to 1.
+        parameter_estimates_input (str, optional): Path to H5 results file containing estimated parameters. Defaults to None.
         seed (int, optional): PRNG seed. Defaults to 7.
         disable_pbar (bool, optional): Disables progress bar. Defaults to False.
     """
@@ -149,14 +150,17 @@ def unroll(
     Unrolls trajectory.
 
     Args:
-        solver (Solver): ODE solver.
-        initial_state (Dict[str, Array]): Initial state.
         num_steps (int): Number of steps.
-        save_interval (int): Interval in which results are saved.
-        disable_pbar (bool): Disables progress bar.
+        solver (Solver): ODE solver.
+        ode (ODE): ODE RHS.
+        build_initial_value (Callable): Function to build initial value.
+        init_state (Callable): Function to build initial filter state.
+        t0 (Array): Initial time.
+        x0 (Array): Initial value.
+        params (Dict[str, Array]): Parameters.
 
     Returns:
-        Dict[str, Array]: Trajectory states.
+        Array: Trajectory states.
     """
 
     def scan_wrapper(
